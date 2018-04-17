@@ -1,0 +1,17 @@
+runtime: python27
+api_version: 1
+threadsafe: true
+
+instance_class: F1
+
+skip_files:
+- dump_test.py
+- .*\.pyc$
+- ^env27/Scripts/.*$
+- ^env27/Include/.*$
+- ^env27/tcl/.*$
+- ^oldFiles/.*$
+
+handlers:
+- url: .*
+  script: authTest.app
