@@ -14,4 +14,4 @@ skip_files:
 
 handlers:
 - url: .*
-  script: authTest.app
+  script: connector.app

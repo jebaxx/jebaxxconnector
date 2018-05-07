@@ -1,0 +1,232 @@
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+
+<title>PHOTO contribution flow Editor (Source Id of LINE Messaging API --> Album Id of Google Web Album mapping) </title>
+
+<style type="text/css">
+table {
+	border-collapse:collapse;
+	border-spacing:0;
+	padding:0;
+	margin:10;
+}
+table tr {
+	border:1px solid #9b9b9b;
+	padding:10px;
+//	padding:10px 15px 10px 15px;
+}
+table th , table td {
+	font-size: small;
+	padding:8px 15px 8px 15px;
+}
+.comment {
+	font-size: small;
+	color: #894d88;
+}
+div.frame {
+	width:900px;
+	margin:auto;
+}
+div.head-menu {
+	height:130;
+	background-color:#cceec0;
+	border: 2px solid #9b9b9b;
+	padding: 0px 20px 0px 20px;
+	position: relative;
+}
+div.main-title {
+	margin-left: 30px;
+}
+div.main-page {
+	background-color:#eef2ee;
+	margin-top: 3px;
+	padding-top: 25;
+	padding-left: 20px;
+	border: 2px solid #9b9b9b;
+}
+</style>
+
+<script type = "text/javascript">
+
+    function selectLine(_selected_line) {
+		document.friends.elements.action.disabled = "";
+    };
+
+    function selectGoogle( google_id ) {
+		document.album_owners.elements.action[1].disabled = "";
+		document.album_owners.elements.action[2].disabled = "";
+    };
+
+    function _change_map_info(obj) {
+		document.friend_info.action[0].disabled = "";
+	}
+
+    function _change_album_list(obj) {
+
+		var albums = document.getElementById('AlbumIds');
+		var num = albums.options.length;
+		for (i = 0 ; i < num; i++) {
+			albums.removeChild(albums.options[0]);	// clear current select items
+		}
+
+		var idx = obj.selectedIndex;				// obj is selected option index
+		var account = obj.options[idx].value;		// = google account
+
+		var source = document.getElementById(account);	// album list of the 'account'
+		num = source.options.length;
+		albums.options.length = num;
+
+		for (i = 0; i < num; i++) {
+			albums.options[i].value = source.options[i].value;
+			albums.options[i].text = source.options[i].text;
+		}
+
+		if (num == 0) {
+			albums.disabled = "True";
+		}
+		else {
+			albums.disabled = "";
+		}
+
+    };
+
+</script>
+
+</head>
+
+<body>
+<div class="frame">
+  <div class="head-menu">
+    <div class="main-title">
+      <h1>写真登録フローの設定</h1>
+      <p style="position:absolute; bottom:0">by ぴょん太<span style="padding-left:40px;"><a href="https://jebaxxmessage.appspot.com/index53.html">メインページへ</a></span></p>
+    </div>
+  </div>
+
+  <div class="main-page">
+  <form name = "friends" action="config" method="post">
+  <h3>Googleフォトアルバムの登録</h3>
+    <input type='hidden' name='friends' value='friends'>
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" width=40>選択</th>
+          <th colspan="2" style="background-color:#e2cee2;">友だち<br><small>友だちが投稿した写真を</small></th>
+          <th></th>
+          <th colspan="3" style="background-color:#f5f5f5;">登録先のアルバム<br><small>ここに自動登録する</small></th>
+        </tr>
+        <tr>
+          <th width=100 style="background-color:#e2cee2; text-align:left">LINE ID</th>
+          <th width=100 style="background-color:#e2cee2;text-align:left">アカウント名</th>
+          <th width=20  style="border-right:1px solid #fdfdfd; text-align:left"> </th>
+          <th width=100 style="background-color:#f2f2f2; text-align:left">Googleアカウント</th>
+          <th width=110 style="background-color:#f2f2f2; text-align:left">アルバム名</th>
+          <th width=120 style="background-color:#f2f2f2; text-align:left">アルバムID</th>
+        </tr>
+      </thead>
+      {% for Line_id, map_info in map_list.iteritems() %}
+      {% set label = map_info['label'] %}
+        <tr>
+          <td>
+            <input type='radio' name='select_map' value='{{ Line_id }}' id='{{ label }}' onclick="selectLine('{{map_info['label']}}')" {{mode.map_list}}>
+          </td>
+          <td style="background-color:#e2cee2;"><label for='{{ label }}'>{{ Line_id }}</label></td>
+          <td style="background-color:#e2cee2;"><label for='{{ label }}'>{{ map_info['name'] }}</label></td>
+          <td></td>
+          <td style="background-color:#f2f2f2; text-align:left"><label for='{{ label }}'>{{ map_info.google_name }}</label></td>
+          <td style="background-color:#f2f2f2; text-align:left"><label for='{{ label }}'>{{ map_info.album_name }}</label></td>
+          <td style="background-color:#f2f2f2; text-align:left"><label for='{{ label }}'>{{ map_info.album_id }}</label></td>
+        </tr>
+      {% endfor %}
+    </table>
+    <p style="text-align:center;">
+    <input type='submit' name='action' value='アルバム設定' style='width:115px;' oncallback="_post_action='edit'" , disabled>
+    </p>
+  </form>
+  <hr>
+  <h4>写真登録先のアルバムを設定</h4>
+  <form name = "friend_info" action="config" onchange="_change_map_info(this)" method="post">
+    <input type='hidden' name='friend_info' value='friend_info'>
+    {% if mode.map_edit == '' %}
+      <input type='hidden' name='Line_id' value='{{ map_info.LINE_id }}'>
+    {% endif %}
+    <table>
+      <tr>
+        <td width=200>LINEアカウント</td>
+        <td width=500>
+          {% if mode.map_edit == '' %}
+            <input type=text name="LINE_account" value="{{map_info.LINE_account}}" size=30 {{ mode.map_edit }}>
+          {% else %}
+            <input type=text name="LINE_account" value="" size=30 {{ mode.map_edit }}>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td>Googleアカウント</td>
+        <td>
+          <select name='google_account' onchange="_change_album_list(this)" {{ mode.map_edit }}>
+            {% if mode.map_edit == '' %}
+              {% for id_google, is_selected in map_info.google_account.iteritems() %}
+                <option value="{{ id_google }}" {{ is_selected }} >{{ id_google }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+          <small>リストにない場合は先にGoogleアカウントを登録してから！!</small>
+        </td>
+      </tr>
+      <tr>
+        <td>アルバム名</td>
+        <td>
+          <select name='AlbumIds' id='AlbumIds' disabled>
+            {% if mode.map_edit == '' %}
+              {% for album_id, album_item in map_info.Album_list.iteritems() %}
+                <option value="{{ album_id }}" {{ album_item.selected }}>{{ album_item.name }}</option>
+              {% endfor %}
+            {% endif %}
+          </select>
+        </td>
+      </tr>
+    </table>
+    <p style="text-align:center;">
+    <input type='submit' name='action' value='登録' style='width:75px;' oncallback="_post_action='update'" , disabled>
+    <input type='submit' name='action' value='キャンセル' style='width:85px;' oncallback="_post_action='cancel'" {{ mode.map_edit }}>
+    </p>
+  </form>
+  <hr>
+  <h3>Googleアカウントの登録</h3>
+  <form name = "album_owners" action="config" method="post">
+    <input type='hidden' name='album_owners' value='album_owners'>
+    <table>
+      <thead>
+        <tr>
+          <th whdth=40>選択</th>
+          <th whdth=200>Googleアカウント</th>
+          <th width=300>アルバムリスト<small>ここは見るだけ</small></th>
+        </tr>
+      </thead>
+      {% for google_id, albums in owner_list.iteritems() %}
+        <tr>
+          <td>
+            <input type='radio' name='select_google' value='{{ google_id }}' onclick="selectGoogle('{{ google_id }}')" {{mode.map_list}} >  </td>
+          <td>{{ google_id }}</td>
+          <td>
+            <select name='album_list' id='{{ google_id }}' {{ mode.map_list }}>
+              {% for albumId, albumName in albums.iteritems() %}
+                <option value="{{ albumId }}">{{ albumName }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+    <p style="text-align:center;">
+      <input type='submit' name='action' value='新規登録' style='width:75px;' >
+      <input type='submit' name='action' value='アルバム再取得' style='width:115px;' disabled>
+      <input type='submit' name='action' value='削除' style='width:75px;' disabled>
+    </p>
+  </form>
+  </div></div>
+</body>
+</html>
+
