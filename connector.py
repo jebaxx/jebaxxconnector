@@ -23,18 +23,18 @@ SCOPES =["https://picasaweb.google.com/data/",
 app = flask.Flask(__name__)
 app.secret_key = "*** SOME SECRET VALUE ***"
 
+#@app.errorhandler(404)
+#def error_handler(error):
+#
+#    msg = 'Error {code}\n'.format(code=error.code)
+#    return msg, error.code
+
 #-##############-###-############----###------------------------------------------
 ###	configページを表示
 ###
 ###	GET: 通常の表示
 ###	POST： フォーム内容によって処理内容をディスパッチする
 ###-------------------------------------------------------------------------------
-
-@app.errorhandler(404)
-def error_handler(error):
-
-    msg = 'Error {code}\n'.format(code=error.code)
-    return msg, error.code
 
 @app.route('/config', methods=['GET','POST'])
 def config():
@@ -44,8 +44,45 @@ def config():
     
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 
-    #-##############-###-############----###
-    #-Googleアカウント一覧を作成
+    #-##############-###-############----###--------------------------
+    #-POST内容（フォーム）により処理を振り分け（その１）
+
+    if (flask.request.method == 'POST') and ('album_owners' in flask.request.form):
+
+	logger.info("request: " + var_dump(flask.request.form))
+ 
+	#-##############-###-######---------
+	#-owner_listフォームからのPOST
+
+	if (flask.request.form['action'] == u'新規登録') :
+	    return flask.redirect('authorize')
+
+	elif (flask.request.form['action'] == u'アルバム再取得') :
+	    credentials = loadCredentials
+	    owner_id = flask.request.form['owner_id']
+	    getAlbums(owner_id, credentials)
+
+	elif (flask.request.form['action'] == u'削除') :
+	    owner_id = flask.request.form['owner_id']
+	    bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
+	    fileName = bucketName + "/album_" + owner_id + ".pickle"
+	    logger.info('** delete file : ' + fileName)
+	    cloudstorage.delete(fileName)
+	    fileName = bucketName + "/cred_" + owner_id + ".pickle"
+	    cloudstorage.delete(fileName)
+
+    #-##############-###-############----###--------------------------
+    #-route_listの読み込み
+
+    fileName = bucketName + "/sourcelist.json"
+    fh = cloudstorage.open(fileName)
+    route_list = json.loads(fh.read())
+    fh.close()
+
+    logger.info("route_list: " + var_dump(route_list))
+
+    #-##############-###-############----###--------------------------
+    #-owner_listの読み込み
 
     prefixFilter = bucketName + "/album_"
     files = cloudstorage.listbucket(prefixFilter)
@@ -55,121 +92,91 @@ def config():
     for fileobj in files:
 	logger.info('** file path = ' + fileobj.filename)
 	matched = re.search("album_(.*)\.pickle$", fileobj.filename)
-	userId = matched.group(1)
+	owner_id = matched.group(1)
 
 	fh = cloudstorage.open(fileobj.filename)
 	encodedAlbums = fh.read()
 	fh.close()
 
-	owner_list[userId] = pickle.loads(encodedAlbums)
+	owner_list[owner_id] = pickle.loads(encodedAlbums)
 
-#    logger.info("owner_list: " + var_dump(owner_list))
+    logger.info("owner_list: " + var_dump(owner_list))
 
-    #-##############-###-############----###
-    #-map_list(LINE投稿⇒アルバム登録ルート設定)の読み込み
+    #-##############-###-############----###--------------------------
+    #-POST内容（フォーム）により処理を振り分け（その２）
 
-    fileName = bucketName + "/sourcelist.json"
-    fh = cloudstorage.open(fileName)
-    map_list = json.loads(fh.read())
-    fh.close()
+    if (flask.request.method == 'POST') and ('route_edit' in flask.request.form):
 
-    #-##############-###-############----###
-    #-POST内容（フォーム）により処理を振り分け
-    mode = {}
+    	logger.info("request: " + var_dump(flask.request.form))
+	#-##############-###-######---------
+	#-route_editフォームからのPOST
 
-    if flask.request.method == 'POST':
-	logger.info("request: " + var_dump(flask.request.form))
-	if ('friends' in flask.request.form):		#-# 友だち⇒アルバムの編集要求
-	    mode['map_list'] = 'disabled'
-	    mode['map_edit'] = ''
-	    mode['album_edit'] = 'disabled'
-    	elif ('friend_info' in flask.request.form):	#-# 友だち⇒アルバムの設定情報
-	    mode['map_list'] = ''
-	    mode['map_edit'] = 'disabled'
-	    mode['album_edit'] = 'disabled'
+	if (flask.request.form['action'] == u'登録') :
 
-	    if (flask.request.form['action'] == u'登録') :
+	    #---#---###----------------############
+	    #-route_editフォームの内容をroute_listに反映する
 
-		#-##############-###-############----###
-		#-map_listに編集結果を反映して永続化
+	    Line_id = flask.request.form['Line_id']
 
-		Line_id = flask.request.form['Line_id']
-		if (flask.request.form['google_account'] == '-'):
-		    del map_list[Line_id]['google_name']
-		    del map_list[Line_id]['album_id']
-		    del map_list[Line_id]['album_name']
+	    if (flask.request.form['owner_id'] == '-') :
+		del route_list[Line_id]['owner_id']
+		del route_list[Line_id]['album_id']
+		del route_list[Line_id]['album_name']
 
-		else:
-		    map_list[Line_id]['google_name'] = flask.request.form['google_account']
-		    map_list[Line_id]['album_id'] = flask.request.form['AlbumIds']
-		    map_list[Line_id]['album_name'] = owner_list[flask.request.form['google_account']][flask.request.form['AlbumIds']]
-		    map_list[Line_id]['name'] = flask.request.form['LINE_account']
+	    else :
+		route_list[Line_id]['owner_id'] = flask.request.form['owner_id']
+		route_list[Line_id]['album_id'] = flask.request.form['album_id']
+		route_list[Line_id]['album_name'] = owner_list[flask.request.form['owner_id']][flask.request.form['album_id']]
+		route_list[Line_id]['name'] = flask.request.form['Line_name']
 
-		fh = cloudstorage.open(fileName, "w")
-		fh.write(json.dumps(map_list))
-		fh.close()
-
-	elif ('album_owners' in flask.request.form):	#-# Googleアカウント登録要求
-	    return flask.redirect('authorize')		#-# OAuth2認証後にアルバム情報を取得
-
-    else:						#-# HTTP GET 現在の設定を表示
-	mode['map_list'] = ''
-	mode['map_edit'] = 'disabled'
-	mode['album_edit'] = 'disabled'
-
-    #-##############-###-############----###
-    #-友だち一覧を作成
+	    fileName = bucketName + "/sourcelist.json"
+	    fh = cloudstorage.open(fileName, "w")
+	    fh.write(json.dumps(route_list))
+	    fh.close()
 
     i = 0
-    for id in map_list.keys():
-    	map_list[id]['label'] = 'lbl_' + str(i)
-    	i+=1
+    for id in route_list.keys() :
+	route_list[id]['label'] = 'lbl_' + str(i)
+	i+=1
 
-    logger.info("map_list: " + var_dump(map_list))
+    if (flask.request.method == 'POST') and ('route_list' in flask.request.form):
 
-    #-##############-###-############----###
-    #-アルバム選択フォームを作成（指示があった場合）
+    	logger.info("request: " + var_dump(flask.request.form))
+	#-##############-###-######---------
+	#-route_listフォームからのPOST
 
-    # map_list[Line_id]['google_name'] …選択されているgoogleアカウント名
-    # map_list[Line_id]['album_name'] …選択されているAlbum名
-    # map_list[Line_id]['album_id'] …選択されているAlbum ID
-    # owner_list[google_id][album_id] …google id , album id を指定してalbum名を取得
+	route_info = {}
 
-    if (mode['map_edit'] == ''):
+	Line_id = flask.request.form['selected_route']
+	selected_owner_id = route_list[Line_id].get('owner_id', '-')
+	selected_album_id = route_list[Line_id].get('album_id', '-')
 
-	map_info = {}
+	route_info['Line_id']      = Line_id
+	route_info['Line_name'] = route_list[Line_id]['name']
+	route_info['owner_id'] = { '-': ('selected' if selected_owner_id == '-' else '') ,  }
+	route_info['album_list']   = {}
 
-	Line_id = flask.request.form['select_map']
-	selected_google_id = map_list[Line_id].get('google_name', '-')
-	selected_album_id  = map_list[Line_id].get('album_id', '-')
+	for owner_id in owner_list.keys():
+	    route_info['owner_id'][owner_id] = 'selected' if owner_id == selected_owner_id else ''
 
-	map_info['LINE_id']      = Line_id
-	map_info['LINE_account'] = map_list[Line_id]['name']
-	map_info['google_account'] = { '-': ('selected' if selected_google_id == '-' else '') ,  }
-	map_info['Album_list']   = {}
-
-	for google_id in owner_list.keys():
-	    map_info['google_account'][google_id] = 'selected' if google_id == selected_google_id else ''
-
-	logger.info("selected_google_id: " + selected_google_id)
-	if (selected_google_id != '-'):
-	    for album_id, album_name in owner_list[selected_google_id].iteritems():
+	if (selected_owner_id != '-'):
+	    for album_id, album_name in owner_list[selected_owner_id].iteritems():
 		isSelected = 'selected' if album_id == selected_album_id else ''
-		map_info['Album_list'][album_id] = { 'name': album_name, 'selected': isSelected }
+		route_info['album_list'][album_id] = { 'name': album_name, 'selected': isSelected }
 
-    # map_info['LINE_account'] … 編集対象であるLineアカウント名
-    # map_info['google_account'] … googleアカウント一覧（既に設定されているものがあればselected属性を設定）
-    # map_info['google_account'][<id>] = 'selected' or ''
-    # map_info['Album_list'] … 既に設定されたgoogleアカウントがある時、初期値として表示するアルバム一覧
-    # map_info['Album_list'][<album_id>]['name'] = アルバム名
-    # map_info['Album_list'][<album_id>]['selected'] = 'selected' or ''
+	logger.info("route_info : " +  var_dump(route_info))
 
-	logger.info("map_info : " +  var_dump(map_info))
-	return flask.render_template('connector_config.html', owner_list=owner_list, map_info=map_info, map_list=map_list, mode=mode);
+	mode = {}
+	mode['initial'] = 'disabled'
+	mode['route_edit'] = ''
+	return flask.render_template('connector_config.html', owner_list=owner_list, route_info=route_info, route_list=route_list, mode=mode);
 
     else:
 
-	return flask.render_template('connector_config.html', owner_list=owner_list, map_list=map_list, mode=mode)
+	mode = {}
+	mode['initial'] = ''
+	mode['route_edit'] = 'disabled'
+	return flask.render_template('connector_config.html', owner_list=owner_list, route_list=route_list, mode=mode)
 
 ###-------------------------------------------------------------------------------
 ###	Google アカウントの登録 
@@ -259,7 +266,7 @@ def get_userId(credentials):
 
 ###----credentialをcloudstorageに保存----
 ###
-def saveCredentials(userId, encodedCredentials) :
+def saveCredentials(userId, credentials) :
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
@@ -270,7 +277,7 @@ def saveCredentials(userId, encodedCredentials) :
     logger.info('** file name = ' + fileName)
 
     fh = cloudstorage.open(fileName, 'w')
-    fh.write(encodedCredentials)
+    fh.write(pickle.dumps(credentials))
     fh.close()
 
 
@@ -286,11 +293,22 @@ def loadCredentials(userId):
     fileName = bucketName + '/cred_' + userId + '.pickle'
     logger.info('** file name to be loaded is ' + fileName)
 
+#    try:
     fh = cloudstorage.open(fileName)
-    encodedCredentials = fh.read()
+    credentials = pickle.loads(fh.read())
     fh.close()
+#    except cloudstorage.NotFoundError:
+#	import traceback
+#    	logger.error("cannot load credentials file in storage")
+#	logger.error(traceback.print_exc())
 
-    return (encodedCredentials)
+    if not credentials.valid:			# 期限切れの場合はrefresh要求を行う
+	import google.auth.transport.requests
+	request = google.auth.transport.requests.Request()
+	credentials.refresh(request)
+	logger.info(var_dump(credentials))
+
+    return (credentials)
 
 ###----credentialが持ち主であるphoto アルバム一覧を取得----
 ###
