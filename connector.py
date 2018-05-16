@@ -12,6 +12,7 @@ import re
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
 from google.appengine.api import app_identity
+from google.appengine.api import taskqueue
 import cloudstorage
 
 
@@ -58,7 +59,7 @@ def config():
 	    return flask.redirect('authorize')
 
 	elif (flask.request.form['action'] == u'アルバム再取得') :
-	    credentials = loadCredentials
+	    credentials = loadCredentials(flask.request.form['owner_id'])
 	    owner_id = flask.request.form['owner_id']
 	    getAlbums(owner_id, credentials)
 
@@ -75,7 +76,7 @@ def config():
     #-route_listの読み込み
 
     fileName = bucketName + "/sourcelist.json"
-    fh = cloudstorage.open(fileName)
+    fh = cloudstorage.nn(fileName)
     route_list = json.loads(fh.read())
     fh.close()
 
@@ -195,7 +196,7 @@ def authorize():
 	flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(CLIENT_SECRETS_FILE, scopes=SCOPES)
 
 	flow.redirect_uri = flask.url_for('oauth2callback', _external = True)
-	authorization_url, state = flow.authorization_url(access_type='offline', prompt='select_account', include_granted_scopes='true')
+	authorization_url, state = flow.authorization_url(access_type='offline', prompt='consent', include_granted_scopes='true')
 	logger.debug('get authorization url from flow : ' + authorization_url)
 
     except Exception:
@@ -216,7 +217,7 @@ def oauth2callback():
     logger.setLevel(logging.DEBUG)
     logger.info('in oauth2callback.')
 
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+#    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
     state = flask.session['state']
 
     try:
@@ -233,7 +234,7 @@ def oauth2callback():
 
 	userId = get_userId(credentials)
 	logger.info('userId: '+ userId + ' from credentials')
-	saveCredentials(userId, pickle.dumps(credentials))
+	saveCredentials(userId, credentials)
 
 	albums = getAlbums(userId, credentials)
 
@@ -303,10 +304,15 @@ def loadCredentials(userId):
 #	logger.error(traceback.print_exc())
 
     if not credentials.valid:			# 期限切れの場合はrefresh要求を行う
+	logger.info('credentials must be refresh.')
 	import google.auth.transport.requests
 	request = google.auth.transport.requests.Request()
 	credentials.refresh(request)
 	logger.info(var_dump(credentials))
+
+	fh = cloudstorage.open(fileName, 'w')
+	fh.write(pickle.dumps(credentials))
+	fh.close()
 
     return (credentials)
 
@@ -344,6 +350,94 @@ def getAlbums(userId, credentials):
 
     return(albums)
 
+###-------------------------------------------------------------------------------
+###	写真登録タスクQueue
+###-------------------------------------------------------------------------------
+
+###----Queue handler----
+###
+@app.route('/enqueuePhoto', methods=['POST'])
+def enqueuePhoto():
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    logger.debug("in EnqueuePhoto handler")
+
+    logger.info(var_dump(flask.request.form))
+    filename = flask.request.form['file']
+    owner_id = flask.request.form['owner_id']
+    album_id = flask.request.form['album_id']
+    userId   = flask.request.form['Line_id']
+    counter  = flask.request.form['counter']
+
+    if (album_id == '-'):
+	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
+    else:
+	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id + '/albumid/' + album_id
+
+    logger.info("photo post endpoint = " + requestUrl)
+
+    try:
+	_code = 500
+	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
+	filepath = bucketName + '/photo_queue/' + filename
+	credentials = loadCredentials(owner_id)
+	headers = { 'Content-Type':'image/jpeg', 'Content-Length':str(cloudstorage.stat(filepath).st_size), 'Slug':filename }
+	params = ( ('access_token', credentials.token), )
+	logger.info("params : " + var_dump(params))	####
+	fh = cloudstorage.open(filepath, mode='r')
+	response = requests.post(requestUrl, headers=headers, params=params, data=fh.read())
+	fh.close()
+	_code = response.status_code
+	if _code > 200 and _code < 299:
+	    cloudstorage.delete(filepath)
+	    logger.info("queued task coplete : " + str(_code))
+	else:
+	    logger.warn("queued task error : " + str(_code))
+
+    except Exception:
+	import traceback
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+
+    return("OK"), _code
+
+###----Enqueue entry point----
+###
+@app.route('/uploadRequestPoint', methods=['POST'])
+def uploadRequestPoint():
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    logger.debug("in uploadRequestPoint")
+
+    logger.info(var_dump(flask.request.form))
+    Line_id = flask.request.form['source']
+    filename = flask.request.form['filename']
+
+    bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
+    routeFile = bucketName + "/sourcelist.json"
+    fh = cloudstorage.open(routeFile)
+    route_list = json.loads(fh.read())
+    fh.close()
+
+    params = {
+	'file' : filename,
+	'Line_id' : Line_id,
+	'owner_id' : route_list[Line_id]['owner_id'],
+	'album_id' : route_list[Line_id]['album_id'],
+	'counter'  : flask.request.form['counter'] }
+
+    try:
+	task = taskqueue.add(url='/enqueuePhoto', params=params)
+	logger.info("enqueued : name = " + task.name)
+
+    except Exception:
+	import traceback
+	logger.error("Exception in uploadRequestPoint")
+	logger.error(traceback.print_exc())
+
+    return("OK")
 
 ###-------------------------------------------------------------------------------###
 @app.route('/')
@@ -410,7 +504,7 @@ def uploadEntryPoint():
 	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 	filename = bucketName + '/images/' + filename
 	logger.info('** destination file = ' + filename)
-	fh = cloudstorage.open(filename, 'w')
+	fh = cloudstorage.open(filename, mode='w')
 	file_contents = fileStream.read()
 
 	logger.info('** read pict file info from request')
@@ -466,7 +560,7 @@ def uploadToAlbum():
 #	fh.close()
 #	data = {'uploadfile': ( targetFile, cloudstorage.open(imgFilePath), 'image/jpeg') ,}
 
-	response = requests.post(endpoint, headers=headers, params=params, data=fh.read(), timeout=20)
+	response = requests.post(endpoint, headers=headers, params=params, data=fh.read())
 #	sfh.close()
 	if response.status_code != requests.codes.ok:
 	    return('file upload error code = ' + str(response.status_code) + '<br>----------<br>' + print_index_table())

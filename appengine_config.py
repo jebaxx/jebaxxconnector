@@ -16,7 +16,7 @@ if not PRODUCTION_MODE:
 	sys.platform = ''
 
 from google.appengine.api import urlfetch
-urlfetch.set_default_fetch_deadline(20.0)
+urlfetch.set_default_fetch_deadline(60.0)
 
 import requests
 import requests_toolbelt.adapters.appengine
