@@ -76,7 +76,7 @@ def config():
     #-route_listの読み込み
 
     fileName = bucketName + "/sourcelist.json"
-    fh = cloudstorage.nn(fileName)
+    fh = cloudstorage.open(fileName)
     route_list = json.loads(fh.read())
     fh.close()
 
@@ -294,14 +294,15 @@ def loadCredentials(userId):
     fileName = bucketName + '/cred_' + userId + '.pickle'
     logger.info('** file name to be loaded is ' + fileName)
 
-#    try:
-    fh = cloudstorage.open(fileName)
-    credentials = pickle.loads(fh.read())
-    fh.close()
-#    except cloudstorage.NotFoundError:
-#	import traceback
-#    	logger.error("cannot load credentials file in storage")
-#	logger.error(traceback.print_exc())
+    try:
+	fh = cloudstorage.open(fileName)
+	credentials = pickle.loads(fh.read())
+	fh.close()
+    except cloudstorage.NotFoundError:
+	import traceback
+	logger.error("cannot load credentials file in storage")
+	logger.error(traceback.print_exc())
+	return
 
     if not credentials.valid:			# 期限切れの場合はrefresh要求を行う
 	logger.info('credentials must be refresh.')
@@ -333,7 +334,7 @@ def getAlbums(userId, credentials):
     root = xml.etree.ElementTree.fromstring(response.text.encode('utf-8'))
     nsmap = {'gphoto' : "http://schemas.google.com/photos/2007", 'Atom' : "http://www.w3.org/2005/Atom"}
 
-    albums = {}
+    albums = {'-':'<default>'}
     for entry in root.findall(".//Atom:entry", nsmap):
     	albums[entry.find(".//gphoto:id", nsmap).text] = entry.find(".//Atom:title", nsmap).text
 
@@ -356,6 +357,8 @@ def getAlbums(userId, credentials):
 
 ###----Queue handler----
 ###
+###	タスク呼び出し…>Album登録API実行
+###
 @app.route('/enqueuePhoto', methods=['POST'])
 def enqueuePhoto():
 
@@ -370,6 +373,15 @@ def enqueuePhoto():
     userId   = flask.request.form['Line_id']
     counter  = flask.request.form['counter']
 
+    try:
+	credentials = loadCredentials(owner_id)
+    except Exception:
+	import traceback
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+#	pushMessage(userId, u"認証エラーで登録できない。もう一度設定し直してみて。")
+	return("auth error"), _code
+
     if (album_id == '-'):
 	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
     else:
@@ -377,14 +389,21 @@ def enqueuePhoto():
 
     logger.info("photo post endpoint = " + requestUrl)
 
+    ### rulfetch config: set TIMEOUT = 60sec
+    ###
+    from google.appengine.api import urlfetch
+    urlfetch.set_default_fetch_deadline(60.0)
+    ###
+
     try:
 	_code = 500
 	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 	filepath = bucketName + '/photo_queue/' + filename
-	credentials = loadCredentials(owner_id)
-	headers = { 'Content-Type':'image/jpeg', 'Content-Length':str(cloudstorage.stat(filepath).st_size), 'Slug':filename }
+	headers = { 'Content-Type':'image/jpeg' if (re.search("\.(jpeg|jpg)", filename) != None) else 'video/mp4', 
+		    'Content-Length':str(cloudstorage.stat(filepath).st_size), 
+		    'Slug':filename }
+	logger.info("headers : " + var_dump(headers))	####
 	params = ( ('access_token', credentials.token), )
-	logger.info("params : " + var_dump(params))	####
 	fh = cloudstorage.open(filepath, mode='r')
 	response = requests.post(requestUrl, headers=headers, params=params, data=fh.read())
 	fh.close()
@@ -392,17 +411,22 @@ def enqueuePhoto():
 	if _code > 200 and _code < 299:
 	    cloudstorage.delete(filepath)
 	    logger.info("queued task coplete : " + str(_code))
+	    return("OK"), _code
 	else:
 	    logger.warn("queued task error : " + str(_code))
+#	    pushMessage(userId, u"うまく登録できない。")
+	    return("enqueue error"), _code
 
     except Exception:
 	import traceback
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
 
-    return("OK"), _code
+    return("other error"), _code
 
 ###----Enqueue entry point----
+###
+###	サイト外からの登録要求受付⇒Queueへの登録
 ###
 @app.route('/uploadRequestPoint', methods=['POST'])
 def uploadRequestPoint():
@@ -440,250 +464,6 @@ def uploadRequestPoint():
     return("OK")
 
 ###-------------------------------------------------------------------------------###
-@app.route('/')
-def index():
-
-    body = print_index_table()
-    return body
-
-@app.route('/appPage')
-def appPage():
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("in appPage")
-
-    if 'credentials' not in flask.session:
-	return flask.redirect('authorize')
-
-    credentials = pickle.loads(flask.session['credentials'])
-    
-    body = "credential acquired.<br>--------------------<br>"
-    if not credentials.valid:
-	body += '----------<br>credential is expired!!!<br>'
-	import google.auth.transport.requests
-	request = google.auth.transport.requests.Request()
-	credentials.refresh(request)
-
-	body += '----------<br>'
-	body += var_dump(credentials)
-
-	logger.info(var_dump(credentials))
-
-	flask.session['credentials'] = pickle.dumps(credentials)
-	saveCredentials(flask.session['credentials'])
-
-    body += '----------<br>'
-    body += '<a href="https://picasaweb.google.com/data/feed/api/user/jxxebata">ALBUM_LIST_URL</a><br><br>'
-    body += '<a href="/getAlbum">Album List browsing page</a><br><br>'
-    body += '<a href="/get_profile">Get User Profile</a><br><br>'
-    body += '<a href="/uploadPict">Upload Photos</a><br><br>'
-    body += '<a href="/uploadToAlbum">Upload to PhotoAlbum</a><br><br>'
-    body += '<a href="/">GOTO Menu</a>'
-
-    return body
-
-@app.route('/uploadPict')
-def uplaodPict():
-    return(flask.render_template('upload-picts.html', message="Pyonta is PYONTA!"))
-
-@app.route('/uploadEntryPoint', methods=['POST'])
-def uploadEntryPoint():
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.info("in uplaodEntryPoint")
-
-    if 'img_file' not in flask.request.files:
-	return('Unexpected POST data<br>----------<br>' + print_index_table())
-
-    try:
-	fileStream = flask.request.files['img_file']
-	filename = fileStream.filename
-
-	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
-	filename = bucketName + '/images/' + filename
-	logger.info('** destination file = ' + filename)
-	fh = cloudstorage.open(filename, mode='w')
-	file_contents = fileStream.read()
-
-	logger.info('** read pict file info from request')
-
-	fh.write(file_contents)
-	fh.close()
-	fileStream.close()
-
-    except Exception:
-	import traceback
-	logger.error("cannot upload photo")
-	logger.error(traceback.print_exc())
-
-    return(filename + ' uploaded <br>----------<br>' + print_index_table())
-
-@app.route('/testEntryPoint', methods=['POST'])
-def testEntryPoint():
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.info("in testEntryPoint")
-
-    body = flask.request.stream.read()
-    logger.info('body = ' + body)
-    return('body = ' + body)
-
-#########################################################
-## UPLOAD TO ALBUM
-#########################################################
-@app.route('/uploadToAlbum')
-def uploadToAlbum():
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.info("in uploadToAlbum")
-
-    userId =  'jxxebata'
-    albumId = '6536666146903484433'
-    targetFile = 'DSCF2558.JPG'
-#    targetFile = 'DSCF1515.JPG'
-    imgFilePath = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name()) + '/images/' + targetFile
-    endpoint = 'https://picasaweb.google.com/data/feed/api/user/' + userId + '/albumid/' + albumId
-#    endpoint = 'http://localhost:8080/uploadEntryPoint/user/' + userId + '/albumid/' + albumId
-#    endpoint = 'http://jebaxxconnector.appspot.com/uploadEntryPoint/user/' + userId + '/albumid/' + albumId
-
-    try:
-	credentials = pickle.loads(flask.session['credentials'])
-	logger.info("Use the credentials: " + var_dump(pickle.loads(flask.session['credentials'])))
-	headers = { 'Content-Type':'image/jpeg', 'Content-Length':str(cloudstorage.stat(imgFilePath).st_size), 'Slug':targetFile }
-	params = ( ('access_token', credentials.token), )
-	fh = cloudstorage.open(imgFilePath, mode='r')
-#	sfh = StringIO.StringIO(fh.read())
-#	fh.close()
-#	data = {'uploadfile': ( targetFile, cloudstorage.open(imgFilePath), 'image/jpeg') ,}
-
-	response = requests.post(endpoint, headers=headers, params=params, data=fh.read())
-#	sfh.close()
-	if response.status_code != requests.codes.ok:
-	    return('file upload error code = ' + str(response.status_code) + '<br>----------<br>' + print_index_table())
-
-    except Exception:
-	import traceback
-	logger.error("cannot upload photo")
-	logger.error(traceback.print_exc())
-	return('file upload error.<br>----------<br>' + print_index_table())
-
-    return('file uploaded.<br>----------<br>' + print_index_table())
-
-@app.route('/getAlbum')
-def getAlbum():
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("in getAlbum")
-
-    if 'credentials' not in flask.session:
-	return flask.redirect('authorize')
-
-    url_albumList = "https://picasaweb.google.com/data/feed/api/user/jxxebata"
-    credentials = pickle.loads(flask.session['credentials'])
-    params = ( ('access_token', credentials.token), )
-
-    response = requests.get(url_albumList, params = params)
-
-    import xml.etree.ElementTree
-    root = xml.etree.ElementTree.fromstring(response.text.encode('utf-8'))
-#    nsmap = {'Atom' : "http://www.w3.org/2005/Atom", 'gphoto' : "http://schemas.google.com/photos/2007"}
-    nsmap = {'gphoto' : "http://schemas.google.com/photos/2007", 'Atom' : "http://www.w3.org/2005/Atom"}
-
-    body = ""
-    body += "---Album list---<br>"
-    for entry in root.findall(".//Atom:entry", nsmap):
-	body += "# " + entry.find(".//Atom:title", nsmap).text + " --- " + entry.find(".//gphoto:id", nsmap).text + "<br>"
-
-    return(body)
-
-@app.route('/reproduceCredentials')
-def reproduceCredentials():
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.info('in reproduceCredentials')
-
-    try:
-	flask.session['credentials'] = loadCredentials()
-    except cloudstorage.NotFoundError:
-    	logger.info("credentials file not found in the cloudstoarage")
-    	return flask.redirect('/authorize')
-    except Exception:
-	import traceback
-    	logger.error("cannot load credentials file in storage")
-	logger.error(traceback.print_exc())
-
-    body = 'credentials reproduced.<br>----------<br>'
-    body += var_dump(pickle.loads(flask.session['credentials'])) + '<br>'
-
-    return( body + print_index_table())
-
-@app.route('/revoke')
-def revoke():
-
-    if 'credentials' not in flask.session:
-        return ( 'you need to <a href="/authorize">authorize</a> before testing the code to revoke credentials. ' )
-
-    credentials = pickle.loads(flask.session['credentials'])
-    
-    revoke = requests.post('https://accounts.google.com/o/oauth2/revoke', 
-                                params = {'token': credentials.token},
-                                headers = {'content-type': 'application/x-www-form-urlencoded'})
-    status_code = getattr(revoke, 'status_code')
-    
-    if status_code == 200 :
-        return('Credentials successfully revoked.<br>----------<br>' + print_index_table())
-    else:
-	return('An error occured.<br>----------<br>' + print_index_table())
-
-@app.route('/clear')
-def clear_credentials():
-
-    if 'credentials' in flask.session:
-        del flask.session['credentials']
-        
-    return ('Credentials have been cleared.<br>----------<br>' + print_index_table())
-
-def credentials_to_dict(credentials):
-    return {	'token' : credentials.token,
-		'refresh_token' : credentials.refresh_token,
-		'token_uri' : credentials.token_uri,
-		'client_id' : credentials.client_id,
-		'client_secret' : credentials.client_secret,
-		'id_token' : credentials.id_token,
-		'scopes' : credentials.scopes,
-		'expiry' : credentials.expiry
-	}
-
-def print_index_table():
-        
-    return( '<table>' +
-        '<tr><td><a href="/appPage">Application Main Page</a></td>' +
-        '    <td>Application submit some APIrequest(s) based on authorization.' +
-        '      Go through the authorization flow if there are no stored ' +
-        '      credentials for the user.</td></tr> ' +
-        '<tr><td><a href="/reproduceCredentials">Reproduce credentials</a></td>' +
-        '    <td>Load credentials from cloudstorage whitch was saved when the last authentication.</td></tr>' +
-        '<tr><td><a href="/authorize">Execute Authentication flow</a></td>' +
-        '    <td>Go directly to the authorization flow. If there are stored ' +
-        '      credentials, you still might not be prompted to reauthorize  ' +
-        '      the application.</td></tr>' +
-        '<tr><td><a href="/revoke">Revoke current credentials</a></td>' +
-        '    <td>Revoke the access token associated with the current user ' +
-        '      session. After revoking credentials, if you go to the test ' +
-        '      page, you should see an <code>invalid_grant</code> error.' +
-        '</td></tr>' +
-        '<tr><td><a href="/clear">Clear Flask session credentials</a></td>' +
-        '    <td>Clear the access token currently stored in the user session. ' +
-        '      After clearing the token, if you <a href="/test">test the ' +
-        '      API request</a> again, you should go back to the auth flow.' +
-        '</td></tr></table>'  )
-
 
 from pprint import pformat
 import types
@@ -732,18 +512,3 @@ def dump(obj):
 	for attr in newobj:
 	    newobj[attr]=dump(newobj[attr])
     return newobj
-
-###############
-## in case execute as a main module
-##
-if __name__ == '__main__':
-    # When running locally, disable OAuthlib's HTTPs verification.
-    # ACTION ITEM for developers:
-    #     When running in production *do not* leave this option enabled.
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-
-    # Specify a hostname and port that are set as a valid redirect URI
-    # for your API project in the Google API Console.
-    #    app.run('jebaxxconnector.appspot.com', 80)
-    app.run('localhost', 8080)
-
