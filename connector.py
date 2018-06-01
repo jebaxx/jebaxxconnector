@@ -31,7 +31,9 @@ app.secret_key = "*** SOME SECRET VALUE ***"
 #    return msg, error.code
 
 #-##############-###-############----###------------------------------------------
+###
 ###	configページを表示
+###-------------------------------------------------------------------------------
 ###
 ###	GET: 通常の表示
 ###	POST： フォーム内容によって処理内容をディスパッチする
@@ -50,10 +52,11 @@ def config():
 
     if (flask.request.method == 'POST') and ('album_owners' in flask.request.form):
 
-	logger.info("request: " + var_dump(flask.request.form))
- 
 	#-##############-###-######---------
-	#-owner_listフォームからのPOST
+	#- owner_listフォームからのPOST
+	#  押下されたボタンにより、Owner登録／アルバム再取得／Owner削除を行う
+
+	logger.info("request: " + var_dump(flask.request.form))
 
 	if (flask.request.form['action'] == u'新規登録') :
 	    return flask.redirect('authorize')
@@ -73,7 +76,7 @@ def config():
 	    cloudstorage.delete(fileName)
 
     #-##############-###-############----###--------------------------
-    #-route_listの読み込み
+    #- 表示データの読み込み（route_list）
 
     fileName = bucketName + "/sourcelist.json"
     fh = cloudstorage.open(fileName)
@@ -83,7 +86,7 @@ def config():
     logger.info("route_list: " + var_dump(route_list))
 
     #-##############-###-############----###--------------------------
-    #-owner_listの読み込み
+    #- 表示データの読み込み（owner_list）
 
     prefixFilter = bucketName + "/album_"
     files = cloudstorage.listbucket(prefixFilter)
@@ -108,14 +111,14 @@ def config():
 
     if (flask.request.method == 'POST') and ('route_edit' in flask.request.form):
 
-    	logger.info("request: " + var_dump(flask.request.form))
 	#-##############-###-######---------
-	#-route_editフォームからのPOST
+	#- route_editフォームからのPOST
+	#  登録ボタンが押されていたら、POSTされたFormデータ内容をroute_listに反映
+
+    	logger.info("request: " + var_dump(flask.request.form))
 
 	if (flask.request.form['action'] == u'登録') :
 
-	    #---#---###----------------############
-	    #-route_editフォームの内容をroute_listに反映する
 
 	    Line_id = flask.request.form['Line_id']
 
@@ -142,10 +145,11 @@ def config():
 
     if (flask.request.method == 'POST') and ('route_list' in flask.request.form):
 
-    	logger.info("request: " + var_dump(flask.request.form))
 	#-##############-###-######---------
-	#-route_listフォームからのPOST
+	#- route_listフォームからのPOST
+	#- route_infoデータを生成してroute_editフォーム(登録ルート編集)の初期値とする
 
+    	logger.info("request: " + var_dump(flask.request.form))
 	route_info = {}
 
 	Line_id = flask.request.form['selected_route']
@@ -357,10 +361,111 @@ def getAlbums(userId, credentials):
 
 ###----Queue handler----
 ###
-###	タスク呼び出し…>Album登録API実行
+###	タスクコール…>Album登録API実行（mp4に対応するための拡張バージョン：工事中）
 ###
 @app.route('/enqueuePhoto', methods=['POST'])
 def enqueuePhoto():
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    logger.debug("in EnqueuePhoto handler")
+
+    logger.info(var_dump(flask.request.form))
+    filename = flask.request.form['file']
+    owner_id = flask.request.form['owner_id']
+    album_id = flask.request.form['album_id']
+    userId   = flask.request.form['Line_id']
+    counter  = flask.request.form['counter']
+
+    try:
+	credentials = loadCredentials(owner_id)
+    except Exception:
+	import traceback
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+#	pushMessage(userId, u"認証エラーで登録できない。もう一度設定し直してみて。")
+	return("auth error"), _code
+
+    if (album_id == '-'):
+	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
+    else:
+	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id + '/albumid/' + album_id
+
+    logger.info("photo post endpoint = " + requestUrl)
+
+    ### rulfetch config: set TIMEOUT = 120s
+    ###
+    from google.appengine.api import urlfetch
+    urlfetch.set_default_fetch_deadline(600)
+    ###
+
+    xml_template = """<entry xmlns="http://www.w3.org/2005/Atom">
+      <title>{0}</title>
+      <category scheme="http://schemas.google.com/g/2005#kind"
+        term="http://schemas.google.com/photos/2007#photo"/>
+     </entry>"""
+
+    try:
+	_code = 500
+	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
+	filepath = bucketName + '/photo_queue/' + filename
+	fh = cloudstorage.open(filepath, mode='r')
+	body, content_type = encode_multipart_related(
+						xml_template.format(filename),
+						fh.read(),
+						'image/jpeg' if (re.search("\.(jpeg|jpg)", filename) != None) else 'video/mp4')
+	fh.close()
+	headers = { 'Content-Type': content_type }
+	params = { 'access_token': credentials.token, 'uploadType': 'multipart' }
+	response = requests.post(requestUrl, headers=headers, params=params, data=body)
+	_code = response.status_code
+	_req_h  = response.request.headers
+	_req_b  = response.request.body[:400]
+	logger.info("request headers : " + var_dump(_req_h))
+	logger.info("request body : " + _req_b)
+
+	if _code > 200 and _code < 299:
+	    cloudstorage.delete(filepath)
+	    logger.info("queued task coplete : " + str(_code))
+	    return("OK"), _code
+	else:
+	    logger.warn("queued task error : " + str(_code))
+#	    pushMessage(userId, u"うまく登録できない。")
+	    return("enqueue error"), _code
+
+    except Exception:
+	import traceback
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+
+    return("other error"), _code
+
+
+###----create multipart request body----
+###
+###	Google photo Album に適合するマルチパートMIME request bodyの作成
+###
+from urllib3.filepost import encode_multipart_formdata, choose_boundary
+from urllib3.fields   import RequestField
+
+def encode_multipart_related(xml_metadata, content, content_type):
+
+    rf1 = RequestField( name='placeholder', data=xml_metadata, headers={'Content-Type': 'application/atom+xml'} )
+    rf2 = RequestField( name='placeholder2', data=content, headers={'Content-Type': content_type } )
+    boundary = choose_boundary()
+
+    body, _ = encode_multipart_formdata([rf1, rf2] , boundary)
+
+    return body, 'multipart/related; boundary=%s' % boundary
+
+
+
+###----Queue handler----
+###
+###	タスクコール…>Album登録API実行（jpegがうまくいったバージョン：一時退避）
+###
+@app.route('/enqueuePhoto0', methods=['POST'])
+def enqueuePhoto0():
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
@@ -395,6 +500,20 @@ def enqueuePhoto():
     urlfetch.set_default_fetch_deadline(60.0)
     ###
 
+	###
+	###	THIS IS TEST!
+	###
+
+    xml_text = ""
+    content  = "1234567890abcdefghijklmnopqrstuvwxyz"
+    body, content_type = encode_multipart_related(xml_text, content, "image/jpeg")
+    logger.info("body : " + body)
+    logger.info("content_type : " + content_type)
+
+	###
+	###
+	###
+
     try:
 	_code = 500
 	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
@@ -427,7 +546,6 @@ def enqueuePhoto():
 ###----Enqueue entry point----
 ###
 ###	サイト外からの登録要求受付⇒Queueへの登録
-###
 @app.route('/uploadRequestPoint', methods=['POST'])
 def uploadRequestPoint():
 
