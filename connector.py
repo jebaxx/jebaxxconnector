@@ -356,19 +356,19 @@ def getAlbums(userId, credentials):
     return(albums)
 
 ###-------------------------------------------------------------------------------
-###	写真登録タスクQueue
+###	写真登録タスクQueue処理
 ###-------------------------------------------------------------------------------
 
 ###----Queue handler----
 ###
-###	タスクコール…>Album登録API実行（mp4に対応するための拡張バージョン：工事中）
+###	非同期タスク処理（Album登録）
 ###
-@app.route('/enqueuePhoto', methods=['POST'])
-def enqueuePhoto():
+@app.route('/workerPhoto', methods=['POST'])
+def workerPhoto():
 
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG)
-    logger.debug("in EnqueuePhoto handler")
+    logger.debug("in Photo queue handler")
 
     logger.info(var_dump(flask.request.form))
     filename = flask.request.form['file']
@@ -462,7 +462,7 @@ def encode_multipart_related(xml_metadata, content, content_type):
 
 ###----Queue handler----
 ###
-###	タスクコール…>Album登録API実行（jpegがうまくいったバージョン：一時退避）
+###	タスクコール…>Album登録API実行（jpegがうまくいったが、multipartでない形式：退避中）
 ###
 @app.route('/enqueuePhoto0', methods=['POST'])
 def enqueuePhoto0():
@@ -545,7 +545,8 @@ def enqueuePhoto0():
 
 ###----Enqueue entry point----
 ###
-###	サイト外からの登録要求受付⇒Queueへの登録
+###	サイト外からの登録要求受付⇒同期処理でQueue登録まで実施
+###
 @app.route('/uploadRequestPoint', methods=['POST'])
 def uploadRequestPoint():
 
@@ -571,13 +572,14 @@ def uploadRequestPoint():
 	'counter'  : flask.request.form['counter'] }
 
     try:
-	task = taskqueue.add(url='/enqueuePhoto', params=params)
+	task = taskqueue.add(url='/workerPhoto', params=params)
 	logger.info("enqueued : name = " + task.name)
 
     except Exception:
 	import traceback
 	logger.error("Exception in uploadRequestPoint")
 	logger.error(traceback.print_exc())
+	return("failed to add new queue entry"), 500
 
     return("OK")
 
