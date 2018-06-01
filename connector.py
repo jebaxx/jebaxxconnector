@@ -564,6 +564,14 @@ def uploadRequestPoint():
     route_list = json.loads(fh.read())
     fh.close()
 
+    try:
+	credentials = loadCredentials(route_list[Line_id]['owner_id'])
+    except Exception:
+	import traceback
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+	return("認証エラーが起きる。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！"), _code
+
     params = {
 	'file' : filename,
 	'Line_id' : Line_id,
@@ -579,7 +587,7 @@ def uploadRequestPoint():
 	import traceback
 	logger.error("Exception in uploadRequestPoint")
 	logger.error(traceback.print_exc())
-	return("failed to add new queue entry"), 500
+	return("なぜか受付処理ができない。江畑潤じゃないと直せない。"), 500
 
     return("OK")
 
