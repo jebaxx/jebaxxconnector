@@ -371,6 +371,19 @@ def workerPhoto():
     userId   = flask.request.form['Line_id']
     counter  = flask.request.form['counter']
 
+    body, ext = os.path.splitext(filename)
+    status_file = body + '.stat'
+
+    import csv
+    stat_count = 0
+    stat_message = ''
+
+    with open(status_file, 'r') as fp:
+	reader = csv.reader(fp)
+	stat_count, stat_message = reader.next()
+
+    logger.debug("async_task count = " + str(stat_count) + "   message = [" + stat_message + "]")
+
     _code = 500
     try:
 	credentials = loadCredentials(owner_id)
@@ -378,8 +391,11 @@ def workerPhoto():
 	import traceback
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
-#	pushMessage(userId, u"認証エラーで登録できない。もう一度設定し直してみて。")
-	return  u"認証エラーで登録できない。もう一度設定し直してみて。", _code
+	with open(status_file, 'w') as fp:
+	    writer = csv.writer(fp)
+	    writer.writerow([stat_count+1, "認証エラーで登録できなかった。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！"])
+	    
+	return  u"auth_error", _code
 
     if (album_id == '-'):
 	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
@@ -388,7 +404,7 @@ def workerPhoto():
 
     logger.info("photo post endpoint = " + requestUrl)
 
-    ### rulfetch config: set TIMEOUT = 120s
+    ### rulfetch config: set TIMEOUT = 600s
     ###
     from google.appengine.api import urlfetch
     urlfetch.set_default_fetch_deadline(600)
