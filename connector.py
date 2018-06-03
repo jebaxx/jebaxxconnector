@@ -298,15 +298,9 @@ def loadCredentials(userId):
     fileName = bucketName + '/cred_' + userId + '.pickle'
     logger.info('** file name to be loaded is ' + fileName)
 
-    try:
-	fh = cloudstorage.open(fileName)
-	credentials = pickle.loads(fh.read())
-	fh.close()
-    except cloudstorage.NotFoundError:
-	import traceback
-	logger.error("cannot load credentials file in storage")
-	logger.error(traceback.print_exc())
-	return
+    fh = cloudstorage.open(fileName)
+    credentials = pickle.loads(fh.read())
+    fh.close()
 
     if not credentials.valid:			# 期限切れの場合はrefresh要求を行う
 	logger.info('credentials must be refresh.')
@@ -377,6 +371,7 @@ def workerPhoto():
     userId   = flask.request.form['Line_id']
     counter  = flask.request.form['counter']
 
+    _code = 500
     try:
 	credentials = loadCredentials(owner_id)
     except Exception:
@@ -384,7 +379,7 @@ def workerPhoto():
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
 #	pushMessage(userId, u"認証エラーで登録できない。もう一度設定し直してみて。")
-	return("auth error"), _code
+	return  u"認証エラーで登録できない。もう一度設定し直してみて。", _code
 
     if (album_id == '-'):
 	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
@@ -406,7 +401,6 @@ def workerPhoto():
      </entry>"""
 
     try:
-	_code = 500
 	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 	filepath = bucketName + '/photo_queue/' + filename
 	fh = cloudstorage.open(filepath, mode='r')
@@ -460,89 +454,6 @@ def encode_multipart_related(xml_metadata, content, content_type):
 
 
 
-###----Queue handler----
-###
-###	タスクコール…>Album登録API実行（jpegがうまくいったが、multipartでない形式：退避中）
-###
-@app.route('/enqueuePhoto0', methods=['POST'])
-def enqueuePhoto0():
-
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("in EnqueuePhoto handler")
-
-    logger.info(var_dump(flask.request.form))
-    filename = flask.request.form['file']
-    owner_id = flask.request.form['owner_id']
-    album_id = flask.request.form['album_id']
-    userId   = flask.request.form['Line_id']
-    counter  = flask.request.form['counter']
-
-    try:
-	credentials = loadCredentials(owner_id)
-    except Exception:
-	import traceback
-	logger.error("Exception in queue handler")
-	logger.error(traceback.print_exc())
-#	pushMessage(userId, u"認証エラーで登録できない。もう一度設定し直してみて。")
-	return("auth error"), _code
-
-    if (album_id == '-'):
-	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
-    else:
-	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id + '/albumid/' + album_id
-
-    logger.info("photo post endpoint = " + requestUrl)
-
-    ### rulfetch config: set TIMEOUT = 60sec
-    ###
-    from google.appengine.api import urlfetch
-    urlfetch.set_default_fetch_deadline(60.0)
-    ###
-
-	###
-	###	THIS IS TEST!
-	###
-
-    xml_text = ""
-    content  = "1234567890abcdefghijklmnopqrstuvwxyz"
-    body, content_type = encode_multipart_related(xml_text, content, "image/jpeg")
-    logger.info("body : " + body)
-    logger.info("content_type : " + content_type)
-
-	###
-	###
-	###
-
-    try:
-	_code = 500
-	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
-	filepath = bucketName + '/photo_queue/' + filename
-	headers = { 'Content-Type':'image/jpeg' if (re.search("\.(jpeg|jpg)", filename) != None) else 'video/mp4', 
-		    'Content-Length':str(cloudstorage.stat(filepath).st_size), 
-		    'Slug':filename }
-	logger.info("headers : " + var_dump(headers))	####
-	params = ( ('access_token', credentials.token), )
-	fh = cloudstorage.open(filepath, mode='r')
-	response = requests.post(requestUrl, headers=headers, params=params, data=fh.read())
-	fh.close()
-	_code = response.status_code
-	if _code > 200 and _code < 299:
-	    cloudstorage.delete(filepath)
-	    logger.info("queued task coplete : " + str(_code))
-	    return("OK"), _code
-	else:
-	    logger.warn("queued task error : " + str(_code))
-#	    pushMessage(userId, u"うまく登録できない。")
-	    return("enqueue error"), _code
-
-    except Exception:
-	import traceback
-	logger.error("Exception in queue handler")
-	logger.error(traceback.print_exc())
-
-    return("other error"), _code
-
 ###----Enqueue entry point----
 ###
 ###	サイト外からの登録要求受付⇒同期処理でQueue登録まで実施
@@ -568,9 +479,10 @@ def uploadRequestPoint():
 	credentials = loadCredentials(route_list[Line_id]['owner_id'])
     except Exception:
 	import traceback
-	logger.error("Exception in queue handler")
+	logger.error("Exception in queue generator")
 	logger.error(traceback.print_exc())
-	return("認証エラーが起きる。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！"), _code
+	response = flask.make_response(u"認証エラーが起きる。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！", 500)
+	return response
 
     params = {
 	'file' : filename,
@@ -580,16 +492,16 @@ def uploadRequestPoint():
 	'counter'  : flask.request.form['counter'] }
 
     try:
-	task = taskqueue.add(url='/workerPhoto', params=params)
+	task = taskqueue.add(url='/workerPhoto', queue_name='photo-uploader-queue', params=params)
 	logger.info("enqueued : name = " + task.name)
 
     except Exception:
 	import traceback
 	logger.error("Exception in uploadRequestPoint")
 	logger.error(traceback.print_exc())
-	return("なぜか受付処理ができない。江畑潤じゃないと直せない。"), 500
+	return(u"なぜか受付処理ができない。江畑潤じゃないと直せない。"), 500
 
-    return("OK")
+    return(u"OK")
 
 ###-------------------------------------------------------------------------------###
 
