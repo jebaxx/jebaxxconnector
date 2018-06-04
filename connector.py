@@ -221,7 +221,7 @@ def oauth2callback():
     logger.setLevel(logging.DEBUG)
     logger.info('in oauth2callback.')
 
-#    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+#    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'	# You can activate the line to be able to run at a test environment.
     state = flask.session['state']
 
     try:
@@ -371,18 +371,20 @@ def workerPhoto():
     userId   = flask.request.form['Line_id']
     counter  = flask.request.form['counter']
 
-    body, ext = os.path.splitext(filename)
-    status_file = body + '.stat'
-
-    import csv
-    stat_count = 0
-    stat_message = ''
-
-    with open(status_file, 'r') as fp:
-	reader = csv.reader(fp)
-	stat_count, stat_message = reader.next()
-
-    logger.debug("async_task count = " + str(stat_count) + "   message = [" + stat_message + "]")
+    #
+    #
+    bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
+    f_body, f_ext = os.path.splitext(filename)
+    prefixFilter = bucketName + '/photo_queue/' + f_body + '.'
+    files = cloudstorage.listbucket(prefixFilter)
+    if len(files) > 0 :
+	stat_fname = files[0].filename
+	matched = re.search("/photo_queue/(.*)\.([0-9]+)", stat_fname)
+	stat_counter = matched.group(2)
+    else:
+	stat_counter = '0'
+    #
+    #
 
     _code = 500
     try:
@@ -391,10 +393,14 @@ def workerPhoto():
 	import traceback
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
-	with open(status_file, 'w') as fp:
-	    writer = csv.writer(fp)
-	    writer.writerow([stat_count+1, "認証エラーで登録できなかった。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！"])
-	    
+	#
+	#
+	stat_fname = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "02d") 
+	fp = cloudstorage.open(status_fname, 'w')
+	fp.write(u"#{}が認証エラーで登録できなかった。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！".format(counter))
+	fp.close()
+	#
+	#
 	return  u"auth_error", _code
 
     if (album_id == '-'):
@@ -405,10 +411,8 @@ def workerPhoto():
     logger.info("photo post endpoint = " + requestUrl)
 
     ### rulfetch config: set TIMEOUT = 600s
-    ###
     from google.appengine.api import urlfetch
     urlfetch.set_default_fetch_deadline(600)
-    ###
 
     xml_template = """<entry xmlns="http://www.w3.org/2005/Atom">
       <title>{0}</title>
@@ -417,7 +421,6 @@ def workerPhoto():
      </entry>"""
 
     try:
-	bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 	filepath = bucketName + '/photo_queue/' + filename
 	fh = cloudstorage.open(filepath, mode='r')
 	body, content_type = encode_multipart_related(
@@ -434,19 +437,39 @@ def workerPhoto():
 	logger.info("request headers : " + var_dump(_req_h))
 	logger.info("request body : " + _req_b)
 
-	if _code > 200 and _code < 299:
+	if _code >= 200 and _code <= 299:
 	    cloudstorage.delete(filepath)
+	    try:
+		cloudstorage.delete(stat_fname)
+	    except NameError:
+	    	pass
+
 	    logger.info("queued task coplete : " + str(_code))
 	    return("OK"), _code
 	else:
 	    logger.warn("queued task error : " + str(_code))
-#	    pushMessage(userId, u"うまく登録できない。")
+	    #
+	    #
+	    stat_fname = bucketName + '/photo_queue/' + body + '.' + format(int(stat_counter) + 1, "02d") 
+	    fp = cloudstorage.open(status_fname, 'w')
+	    fp.write(u"#{}のアルバム登録を何度か試したけどエラーになる。".format(counter))
+	    fp.close()
+	    #
+	    #
 	    return("enqueue error"), _code
 
     except Exception:
 	import traceback
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
+	#
+	#
+	stat_fname = bucketName + '/photo_queue/' + body + '.' + format(int(stat_counter) + 1, "02d") 
+	fp = cloudstorage.open(status_fname, 'w')
+	fp.write(u"#{}をなぜかアルバムに登録できない".format(counter))
+	fp.close()
+	#
+	#
 
     return("other error"), _code
 
@@ -515,7 +538,7 @@ def uploadRequestPoint():
 	import traceback
 	logger.error("Exception in uploadRequestPoint")
 	logger.error(traceback.print_exc())
-	return(u"なぜか受付処理ができない。江畑潤じゃないと直せない。"), 500
+	return(u"なぜか受付処理ができない。江畑潤じゃないと直せないかも。"), 500
 
     return(u"OK")
 
