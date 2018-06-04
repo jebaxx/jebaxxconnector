@@ -375,11 +375,11 @@ def workerPhoto():
     #
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
     f_body, f_ext = os.path.splitext(filename)
-    prefixFilter = bucketName + '/photo_queue/' + f_body + '.'
+    prefixFilter = bucketName + '/photo_queue/' + f_body + '.0'
     files = cloudstorage.listbucket(prefixFilter)
     if len(files) > 0 :
 	stat_fname = files[0].filename
-	matched = re.search("/photo_queue/(.*)\.([0-9]+)", stat_fname)
+	matched = re.search("/photo_queue/(.*)_[0-9]+\.([0-9]+)", stat_fname)
 	stat_counter = matched.group(2)
     else:
 	stat_counter = '0'
@@ -395,7 +395,7 @@ def workerPhoto():
 	logger.error(traceback.print_exc())
 	#
 	#
-	stat_fname = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "02d") 
+	stat_fname = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "03d") 
 	fp = cloudstorage.open(status_fname, 'w')
 	fp.write(u"#{}が認証エラーで登録できなかった。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！".format(counter))
 	fp.close()
@@ -450,7 +450,7 @@ def workerPhoto():
 	    logger.warn("queued task error : " + str(_code))
 	    #
 	    #
-	    stat_fname = bucketName + '/photo_queue/' + body + '.' + format(int(stat_counter) + 1, "02d") 
+	    stat_fname = bucketName + '/photo_queue/' + body + '.' + format(int(stat_counter) + 1, "03d") 
 	    fp = cloudstorage.open(status_fname, 'w')
 	    fp.write(u"#{}のアルバム登録を何度か試したけどエラーになる。".format(counter))
 	    fp.close()
@@ -464,7 +464,7 @@ def workerPhoto():
 	logger.error(traceback.print_exc())
 	#
 	#
-	stat_fname = bucketName + '/photo_queue/' + body + '.' + format(int(stat_counter) + 1, "02d") 
+	stat_fname = bucketName + '/photo_queue/' + body + '.' + format(int(stat_counter) + 1, "03d") 
 	fp = cloudstorage.open(status_fname, 'w')
 	fp.write(u"#{}をなぜかアルバムに登録できない".format(counter))
 	fp.close()
