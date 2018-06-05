@@ -8,6 +8,7 @@ import logging
 import pickle
 import StringIO
 import re
+import traceback
 
 import google.oauth2.credentials
 import google_auth_oauthlib.flow
@@ -204,7 +205,6 @@ def authorize():
 	logger.debug('get authorization url from flow : ' + authorization_url)
 
     except Exception:
-	import traceback
 	logger.error("Exception in authorize")
 	logger.error(traceback.print_exc())
     
@@ -243,7 +243,6 @@ def oauth2callback():
 	albums = getAlbums(userId, credentials)
 
     except Exception:
-	import traceback
 	logger.error("Exception in authorization callback")
 	logger.error(traceback.print_exc())
 
@@ -371,9 +370,18 @@ def workerPhoto():
     userId   = flask.request.form['Line_id']
     counter  = flask.request.form['counter']
 
-    #
-    #
+    if (album_id == '-'):
+	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
+    else:
+	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id + '/albumid/' + album_id
+    logger.info("photo post endpoint = " + requestUrl)
+
+    _code = 500
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
+
+    #
+    # Search for current stat file
+    #
     f_body, f_ext = os.path.splitext(filename)
     prefixFilter = bucketName + '/photo_queue/' + f_body + '.0'
     files = cloudstorage.listbucket(prefixFilter)
@@ -383,37 +391,30 @@ def workerPhoto():
 	stat_counter = matched.group(2)
     except StopIteration:
 	stat_counter = '0'
-    #
-    #
 
-    _code = 500
+    stat_fnext = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "03d") 
+
+    #
+    # load credentials
+    #
     try:
 	credentials = loadCredentials(owner_id)
     except Exception:
-	import traceback
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
-	#
-	#
-	stat_fname = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "03d") 
-	fp = cloudstorage.open(stat_fname, 'w')
-	fp.write("#{}".format(counter) + u"が認証エラーで登録できなかった。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！".decode('utf-8'))
+	message = "#" + str(counter) + u"が認証エラーで登録できなかった。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！"
+	fp = cloudstorage.open(stat_fnext, 'w')
+	fp.write(message.encode('utf-8'))
 	fp.close()
-	#
-	#
 	return  u"auth_error", _code
-
-    if (album_id == '-'):
-	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
-    else:
-	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id + '/albumid/' + album_id
-
-    logger.info("photo post endpoint = " + requestUrl)
 
     ### rulfetch config: set TIMEOUT = 600s
     from google.appengine.api import urlfetch
     urlfetch.set_default_fetch_deadline(600)
 
+    #
+    # setup request
+    #
     xml_template = """<entry xmlns="http://www.w3.org/2005/Atom">
       <title>{0}</title>
       <category scheme="http://schemas.google.com/g/2005#kind"
@@ -430,14 +431,39 @@ def workerPhoto():
 	fh.close()
 	headers = { 'Content-Type': content_type }
 	params = { 'access_token': credentials.token, 'uploadType': 'multipart' }
-	response = requests.post(requestUrl, headers=headers, params=params, data=body)
-	_code = response.status_code
-	_req_h  = response.request.headers
-	_req_b  = response.request.body[:400]
-	logger.info("request headers : " + var_dump(_req_h))
-	logger.info("request body : " + _req_b)
+    except Exception:
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+	message = "#" + str(counter) + u"のデータが削除されたかも。登録できない。"
+	fp = cloudstorage.open(stat_fnext, 'w')
+	fp.write(message.encode('utf-8'))
+	fp.close()
+	return("other error"), _code
 
-	if _code >= 200 and _code <= 299:
+    #
+    # POST request to Photo Album
+    #
+    try:
+	response = requests.post(requestUrl, headers=headers, params=params, data=body)
+    except Exception:
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+	message = "#" + str(counter) + u"をなぜかアルバムに登録できない"
+	fp = cloudstorage.open(stat_fnext, 'w')
+	fp.write(message.encode('utf-8'))
+	fp.close()
+	return("other error"), _code
+
+    #
+    # Check Result
+    #
+    _code = response.status_code
+    _req_h  = response.request.headers
+    _req_b  = response.request.body[:400]
+    logger.info("request headers : " + var_dump(_req_h))
+    logger.info("request body : " + _req_b)
+
+    if _code >= 200 and _code <= 299:
 	    cloudstorage.delete(filepath)
 	    try:
 		cloudstorage.delete(stat_fname)
@@ -446,33 +472,13 @@ def workerPhoto():
 
 	    logger.info("queued task coplete : " + str(_code))
 	    return("OK"), _code
-	else:
-	    logger.warn("queued task error : " + str(_code))
-	    #
-	    #
-	    stat_fname = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "03d") 
-	    fp = cloudstorage.open(stat_fname, 'w')
-	    fp.write("#{}".format(counter) + u"のアルバム登録を何度か試したけどエラーになる。".decode('utf-8'))
+    else:
+	    logger.error("queued task error : " + str(_code))
+	    message = "#" + str(counter) + u"のアルバム登録を何度か試したけどエラーになる。"
+	    fp = cloudstorage.open(stat_fnext, 'w')
+	    fp.write(message.encode('utf-8'))
 	    fp.close()
-	    #
-	    #
 	    return("enqueue error"), _code
-
-    except Exception:
-	import traceback
-	logger.error("Exception in queue handler")
-	logger.error(traceback.print_exc())
-	#
-	#
-	stat_fname = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "03d") 
-	fp = cloudstorage.open(stat_fname, 'w')
-	fp.write("#{}".format(counter) + u"をなぜかアルバムに登録できない".decode('utf-8'))
-	fp.close()
-	#
-	#
-
-    return("other error"), _code
-
 
 ###----create multipart request body----
 ###
@@ -517,7 +523,6 @@ def uploadRequestPoint():
     try:
 	credentials = loadCredentials(route_list[Line_id]['owner_id'])
     except Exception:
-	import traceback
 	logger.error("Exception in queue generator")
 	logger.error(traceback.print_exc())
 	response = flask.make_response(u"認証エラーが起きる。もう一度設定からやり直してみて。分からなければ江畑潤に聞いて！", 500)
@@ -535,7 +540,6 @@ def uploadRequestPoint():
 	logger.info("enqueued : name = " + task.name)
 
     except Exception:
-	import traceback
 	logger.error("Exception in uploadRequestPoint")
 	logger.error(traceback.print_exc())
 	return(u"なぜか受付処理ができない。江畑潤じゃないと直せないかも。"), 500
