@@ -379,9 +379,9 @@ def workerPhoto():
     _code = 500
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 
-    #
-    # Search for current stat file
-    #
+    #:
+    #: Search for current stat file
+    #:
     f_body, f_ext = os.path.splitext(filename)
     prefixFilter = bucketName + '/photo_queue/' + f_body + '.0'
     files = cloudstorage.listbucket(prefixFilter)
@@ -389,14 +389,15 @@ def workerPhoto():
 	stat_fname =  next(iter(files)).filename
 	matched = re.search("/photo_queue/(.*)_[0-9]+\.([0-9]+)", stat_fname)
 	stat_counter = matched.group(2)
+	cloudstorage.delete(stat_fname)
     except StopIteration:
 	stat_counter = '0'
 
     stat_fnext = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "03d") 
 
-    #
-    # load credentials
-    #
+    #:
+    #: load credentials
+    #:
     try:
 	credentials = loadCredentials(owner_id)
     except Exception:
@@ -412,9 +413,9 @@ def workerPhoto():
     from google.appengine.api import urlfetch
     urlfetch.set_default_fetch_deadline(600)
 
-    #
-    # setup request
-    #
+    #:
+    #: setup request
+    #:
     xml_template = """<entry xmlns="http://www.w3.org/2005/Atom">
       <title>{0}</title>
       <category scheme="http://schemas.google.com/g/2005#kind"
@@ -440,9 +441,9 @@ def workerPhoto():
 	fp.close()
 	return("other error"), _code
 
-    #
-    # POST request to Photo Album
-    #
+    #:
+    #: POST request to Photo Album
+    #:
     try:
 	response = requests.post(requestUrl, headers=headers, params=params, data=body)
     except Exception:
@@ -454,9 +455,9 @@ def workerPhoto():
 	fp.close()
 	return("other error"), _code
 
-    #
-    # Check Result
-    #
+    #:
+    #: Check Result
+    #:
     _code = response.status_code
     _req_h  = response.request.headers
     _req_b  = response.request.body[:400]
