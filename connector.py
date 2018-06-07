@@ -369,6 +369,9 @@ def workerPhoto():
     album_id = flask.request.form['album_id']
     userId   = flask.request.form['Line_id']
     counter  = flask.request.form['counter']
+    userName = flask.request.form['userName']
+
+    logger.info("user name = " + userName)
 
     if (album_id == '-'):
 	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
@@ -416,7 +419,7 @@ def workerPhoto():
     #:
     #: setup request
     #:
-    xml_template = """<entry xmlns="http://www.w3.org/2005/Atom">
+    xml_template = u"""<entry xmlns="http://www.w3.org/2005/Atom">
       <title>{0}</title>
       <category scheme="http://schemas.google.com/g/2005#kind"
         term="http://schemas.google.com/photos/2007#photo"/>
@@ -426,7 +429,7 @@ def workerPhoto():
 	filepath = bucketName + '/photo_queue/' + filename
 	fh = cloudstorage.open(filepath, mode='r')
 	body, content_type = encode_multipart_related(
-						xml_template.format(filename),
+						xml_template.format(userName + '_' + str(counter)),
 						fh.read(),
 						'image/jpeg' if (re.search("\.(jpeg|jpg)", filename) != None) else 'video/mp4')
 	fh.close()
@@ -534,7 +537,8 @@ def uploadRequestPoint():
 	'Line_id' : Line_id,
 	'owner_id' : route_list[Line_id]['owner_id'],
 	'album_id' : route_list[Line_id]['album_id'],
-	'counter'  : flask.request.form['counter'] }
+	'counter'  : flask.request.form['counter'],
+	'userName'  : flask.request.form['userName'] }
 
     try:
 	task = taskqueue.add(url='/workerPhoto', queue_name='photo-uploader-queue', params=params)
