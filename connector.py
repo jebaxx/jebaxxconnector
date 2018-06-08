@@ -429,16 +429,16 @@ def workerPhoto():
 	filepath = bucketName + '/photo_queue/' + filename
 	fh = cloudstorage.open(filepath, mode='r')
 	body, content_type = encode_multipart_related(
-						xml_template.format(userName + '_' + str(counter)),
-						fh.read(),
-						'image/jpeg' if (re.search("\.(jpeg|jpg)", filename) != None) else 'video/mp4')
+				xml_template.format(userName + '_' + str(counter) + '.' + f_ext),
+				fh.read(),
+				'image/jpeg' if (re.search("\.(jpeg|jpg)", filename) != None) else 'video/mp4')
 	fh.close()
 	headers = { 'Content-Type': content_type }
 	params = { 'access_token': credentials.token, 'uploadType': 'multipart' }
     except Exception:
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
-	message = "#" + str(counter) + u"のデータが削除されたかも。登録できない。"
+	message = "#" + str(counter) + u"の登録データを無くしちゃったかも。もう一度もらえないかな。"
 	fp = cloudstorage.open(stat_fnext, 'w')
 	fp.write(message.encode('utf-8'))
 	fp.close()
@@ -478,7 +478,7 @@ def workerPhoto():
 	    return("OK"), _code
     else:
 	    logger.error("queued task error : " + str(_code))
-	    message = "#" + str(counter) + u"のアルバム登録を何度か試したけどエラーになる。"
+	    message = "何度試しても#" + str(counter) + u"をアルバム登録できなかった。大きすぎたかも。"
 	    fp = cloudstorage.open(stat_fnext, 'w')
 	    fp.write(message.encode('utf-8'))
 	    fp.close()
