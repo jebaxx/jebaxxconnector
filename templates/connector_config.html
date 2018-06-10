@@ -5,27 +5,30 @@
 <title>PHOTO contribution flow Editor (Source Id of LINE Messaging API --> Album Id of Google Web Album mapping) </title>
 
 <style type="text/css">
-table {
+table.route_list {
 	border-collapse:collapse;
-	border-spacing:0;
+	padding:0;
+	margin:10;
+}
+table {
+	border-collapse:separate;
+	border-spacing:1px;
 	padding:0;
 	margin:10;
 }
 table tr {
-	border:1px solid #9b9b9b;
-	padding:10px;
-//	padding:10px 15px 10px 15px;
+//	border:1px solid #9b9b9b;
 }
 table th , table td {
 	font-size: small;
-	padding:8px 15px 8px 15px;
+	padding:8px 10px 8px 10px;
 }
 .comment {
 	font-size: small;
 	color: #894d88;
 }
 div.frame {
-	width:900px;
+	width:670px;
 	margin:auto;
 }
 div.head-menu {
@@ -37,14 +40,69 @@ div.head-menu {
 }
 div.main-title {
 	margin-left: 30px;
+	width: 350px;
 }
 div.main-page {
 	background-color:#eef2ee;
 	margin-top: 3px;
-	padding-top: 25;
-	padding-left: 20px;
+	padding-top: 5;
+	padding-left: 15;
+	padding-right: 15;
 	border: 2px solid #9b9b9b;
 }
+.with_id {
+}
+.popup_text {
+    display: none;
+	background-color:#3efe3e;
+    position: absolute;
+    padding: 0px 10px;
+}
+.with_id:hover + .popup_text {
+    display: block;
+}
+.type_10 {
+    color: #4070b0;
+	background-color:#c2e0b8;
+    border-right: solid 2px #c0c0c0;
+    border-bottom: solid 2px #c0c0c0;
+    border-top: solid 3px #ffffff;
+    border-left: solid 3px #ffffff;
+}
+.type_20 {
+    color: #b04070;
+	background-color:#c2e0b8;
+    border-right: solid 2px #b0b0b0;
+    border-bottom: solid 2px #b0b0b0;
+    border-top: solid 3px #ffffff;
+    border-left: solid 3px #ffffff;
+}
+.type_1 {
+    color: #4070b0;
+    background-color: #ddeed0;
+    border-right: solid 2px #c0c0c0;
+    border-bottom: solid 2px #c0c0c0;
+    border-top: solid 3px #ffffff;
+    border-left: solid 3px #ffffff;
+}
+.type_2 {
+    color: #b04070;
+    background-color: #ddeed0;
+    border-right: solid 2px #b0b0b0;
+    border-bottom: solid 2px #b0b0b0;
+    border-top: solid 3px #ffffff;
+    border-left: solid 3px #ffffff;
+}
+.type_00 {
+    color: #a0a0a0;
+	background-color:#e0e0e0;
+    border-right: solid 2px #c0c0c0;
+    border-bottom: solid 2px #c0c0c0;
+    border-top: solid 3px #ffffff;
+    border-left: solid 3px #ffffff;
+}
+
+
 </style>
 
 <script type = "text/javascript">
@@ -98,6 +156,9 @@ div.main-page {
 <body>
 <div class="frame">
   <div class="head-menu">
+    <div style="float: right; margin-top:20px;">
+     <img src="images/pyonta-kasa.png" alt="pyonta-image" width=100/>
+    </div>
     <div class="main-title">
       <h1>写真登録フローの設定</h1>
       <p style="position:absolute; bottom:0">by ぴょん太<span style="padding-left:40px;"><a href="https://jebaxxmessage.appspot.com/index53.html">メインページへ</a></span></p>
@@ -106,86 +167,134 @@ div.main-page {
 
   <div class="main-page">
   <form name = "route_list" action="config" method="post">
-  <h3>Googleフォトアルバムの登録</h3>
+  <h3>写真転送先一覧</h3>
+  <p>現在のアルバム設定を表示しています。</p>
     <input type='hidden' name='route_list' value='route_list'>
     <table>
       <thead>
         <tr>
-          <th rowspan="2" width=40>選択</th>
-          <th colspan="2" style="background-color:#e2cee2;">友だち<br><small>友だちが投稿した写真を</small></th>
-          <th></th>
-          <th colspan="3" style="background-color:#f5f5f5;">登録先のアルバム<br><small>ここに自動登録する</small></th>
+          <th colspan='2'>友だち<small>が投稿した写真を</small></th>
+          <th style="margin:1; padding:0"></th>
+          <th colspan="2"><small>この</small>アルバム<small>に登録する</small></th>
         </tr>
-        <tr>
-          <th width=100 style="background-color:#e2cee2; text-align:left">LINE ID</th>
-          <th width=100 style="background-color:#e2cee2;text-align:left">アカウント名</th>
-          <th width=20  style="border-right:1px solid #fdfdfd; text-align:left"> </th>
-          <th width=100 style="background-color:#f2f2f2; text-align:left">Googleアカウント</th>
-          <th width=110 style="background-color:#f2f2f2; text-align:left">アルバム名</th>
-          <th width=120 style="background-color:#f2f2f2; text-align:left">アルバムID</th>
-        </tr>
+        {% if mode.initial == '' %}
+          <tr>
+            <th colspan="2" width=180 class='type_10'>LINEアカウント</th>
+            <th width=2 style="margin:1; padding:0"></th>
+            <th width=160 class='type_20'>Googleアカウント</th>
+            <th width=160 class='type_20'>アルバム名</th>
+          </tr>
+        {% else %}
+          <tr>
+            <th colspan="2" width=180 class='type_00'>LINEアカウント</th>
+            <th width=2 style="margin:1; padding:0"></th>
+            <th width=160 class='type_00'>Googleアカウント</th>
+            <th width=160 class='type_00'>アルバム名</th>
+          </tr>
+        {% endif %}
       </thead>
       {% for Line_id, route_info in route_list.iteritems() %}
       {% set label = route_info['label'] %}
-        <tr>
-          <td>
-            <input type='radio' name='selected_route' value='{{ Line_id }}' id='{{ label }}' onclick="selectLine('{{ label }}')" {{mode.initial}}>
-          </td>
-          <td style="background-color:#e2cee2;"><label for='{{ label }}'>{{ Line_id }}</label></td>
-          <td style="background-color:#e2cee2;"><label for='{{ label }}'>{{ route_info['name'] }}</label></td>
-          <td></td>
-          <td style="background-color:#f2f2f2; text-align:left"><label for='{{ label }}'>{{ route_info.owner_id }}</label></td>
-          <td style="background-color:#f2f2f2; text-align:left"><label for='{{ label }}'>{{ route_info.album_name }}</label></td>
-          <td style="background-color:#f2f2f2; text-align:left"><label for='{{ label }}'>{{ route_info.album_id }}</label></td>
-        </tr>
+        {% if mode.initial == '' %}
+          <tr>
+            <td width=10 class='type_1'>
+              <input type='radio' name='selected_route' value='{{ Line_id }}' id='{{ label }}' onclick="selectLine('{{ label }}')" {{mode.initial}}>
+            </td>
+            <td class="type_1">
+              <label class='with_id' for='{{ label }}'>{{ route_info['name'] }}</label>
+              <p class='popup_text'>id = {{ Line_id }}</p>
+            </td>
+            <td style="margin:1; padding:0"></th>
+            <td class="type_2"><label for='{{ label }}'>{{ route_info.owner_id }}</label></td>
+            <td class="type_2">
+              <label class='with_id' for='{{ label }}'>{{ route_info.album_name }}</label>
+              <p class='popup_text'>id = {{ route_info.album_id }}</p>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td width=10 class="type_00">
+              <input type='radio' name='selected_route' value='{{ Line_id }}' id='{{ label }}' onclick="selectLine('{{ label }}')" {{mode.initial}}>
+            </td>
+            <td class="type_00">
+              <label class='with_id' for='{{ label }}'>{{ route_info['name'] }}</label>
+              <p class='popup_text'>id = {{ Line_id }}</p>
+            </td>
+            <td style="margin:1; padding:0"></th>
+            <td class="type_00"><label for='{{ label }}'>{{ route_info.owner_id }}</label></td>
+            <td class="type_00">
+              <label class='with_id' for='{{ label }}'>{{ route_info.album_name }}</label>
+              <p class='popup_text'>id = {{ route_info.album_id }}</p>
+            </td>
+          </tr>
+        {% endif %}
       {% endfor %}
     </table>
     <p style="text-align:center;">
-    <input type='submit' name='action' value='アルバム設定' style='width:115px;' oncallback="_post_action='edit'" , disabled>
+    <input type='submit' name='action' value='登録先を設定・変更' style='width:1333x;' oncallback="_post_action='edit'" , disabled>
     </p>
   </form>
   <hr>
-  <h4>写真登録先のアルバムを設定</h4>
+  <h3>写真登録先のアルバムを決める</h3>
+  <p>登録済のGoogleアカウントからアルバムを選択することができます。</p>
   <form name = "route_info" action="config" onchange="change_route_info(this)" method="post">
     <input type='hidden' name='route_edit' value='route_edit'>
     {% if mode.route_edit == '' %}
       <input type='hidden' name='Line_id' value='{{ route_info.Line_id }}'>
     {% endif %}
     <table>
-      <tr>
-        <td width=200>LINEアカウント</td>
-        <td width=500>
-          {% if mode.route_edit == '' %}
+      {% if mode.route_edit == '' %}
+        <tr>
+          <td width=180 class='type_10'>LINEアカウント</td>
+          <td width=320 class='type_1'>
             <input type=text name="Line_name" value="{{route_info.Line_name}}" size=30 {{ mode.route_edit }}>
-          {% else %}
-            <input type=text name="Line_name" value="" size=30 {{ mode.route_edit }}>
-          {% endif %}
-        </td>
-      </tr>
-      <tr>
-        <td>Googleアカウント</td>
-        <td>
-          <select name='owner_id' onchange="change_album_list(this)" {{ mode.route_edit }}>
-            {% if mode.route_edit == '' %}
+          </td>
+        </tr>
+        <tr>
+          <td class='type_20'>Googleアカウント</td>
+          <td class='type_2'>
+            <select name='owner_id' onchange="change_album_list(this)" {{ mode.route_edit }}>
               {% for owner_id, is_selected in route_info.owner_id.iteritems() %}
                 <option value="{{ owner_id }}" {{ is_selected }} >{{ owner_id }}</option>
               {% endfor %}
-            {% endif %}
-          </select>
-          <small>リストにない場合は先にGoogleアカウントを登録してから！!</small>
-        </td>
-      </tr>
-      <tr>
-        <td>アルバム名</td>
-        <td>
-          <select name='album_id' id='select_album_id' {{ mode.route_edit }}>
-            {% if mode.route_edit == '' %}
+            </select>
+            <br><small>リストにない場合は先にGoogleアカウントを登録してから！!</small>
+          </td>
+        </tr>
+        <tr>
+          <td class='type_20'>アルバム名</td>
+          <td class='type_2'>
+            <select name='album_id' id='select_album_id' {{ mode.route_edit }}>
               {% for album_id, album_item in route_info.album_list.iteritems() %}
                 <option value="{{ album_id }}" {{ album_item.selected }}>{{ album_item.name }}</option>
               {% endfor %}
-            {% endif %}
-          </select>
-        </td>
+            </select>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td width=180 class='type_00'>LINEアカウント</td>
+          <td width=320 class='type_00'>
+            <input type=text name="Line_name" value="" size=30 {{ mode.route_edit }}>
+          </td>
+        </tr>
+        <tr>
+          <td class='type_00'>Googleアカウント</td>
+          <td class='type_00'>
+            <select name='owner_id' onchange="change_album_list(this)" {{ mode.route_edit }}>
+            </select>
+            <br><small>リストにない場合は先にGoogleアカウントを登録してから！!</small>
+          </td>
+        </tr>
+        <tr>
+          <td class='type_00'>アルバム名</td>
+          <td class='type_00'>
+            <select name='album_id' id='select_album_id' {{ mode.route_edit }}>
+            </select>
+          </td>
+        </tr>
+
+      {% endif %}
       </tr>
     </table>
     <p style="text-align:center;">
@@ -194,39 +303,73 @@ div.main-page {
     </p>
   </form>
   <hr>
-  <h3>Googleアカウントの登録</h3>
+  <h3>Googleアカウントを登録する</h3>
+  <p>ここにGoogleアカウントを登録するには、ユーザ認証が必要です。<br>
+  新規登録ボタンを押すと、「Googleにログイン」画面に遷移します。</p>
   <form name = "album_owners" action="config" method="post">
     <input type='hidden' name='album_owners' value='album_owners'>
     <table>
       <thead>
+      {% if mode.initial == '' %}
         <tr>
-          <th whdth=40>選択</th>
-          <th whdth=200>Googleアカウント</th>
-          <th width=300>アルバムリスト<small>ここは見るだけ</small></th>
+          <th colspan='2' class='type_20' width=180>Googleアカウント</th>
+          <th class='type_20' width=320>アルバムリスト<small>（ここはリストを見て確認するだけ）</small></th>
         </tr>
+      {% else %}
+        <tr>
+          <th colspan='2' class='type_00' width=180>Googleアカウント</th>
+          <th class='type_00' width=320>アルバムリスト<small>（ここはリストを見て確認するだけ）</small></th>
+        </tr>
+      {% endif %}
       </thead>
       {% for owner_id, album_list in owner_list.iteritems() %}
-        <tr>
-          <td>
-            <input type='radio' name='owner_id' value='{{ owner_id }}' onclick="change_owner('{{ owner_id }}')" {{mode.initial}} >  </td>
-          <td>{{ owner_id }}</td>
-          <td>
-            <select name='album_id' id='{{ owner_id }}' {{ mode.initial }}>
-              {% for album_id, album_name in album_list.iteritems() %}
-                <option value="{{ album_id }}">{{ album_name }}</option>
-              {% endfor %}
-            </select>
-          </td>
-        </tr>
+        {% if mode.initial == '' %}
+          <tr>
+            <td class="type_2">
+              <input type='radio' name='owner_id' id='{{ owner_id }}' value='{{ owner_id }}' onclick="change_owner('{{ owner_id }}')" {{mode.initial}} >
+            </td>
+            <td class='type_2'>
+              <label for='{{ owner_id }}'>{{ owner_id }}</label>
+            </td>
+            <td class='type_2'>
+              <select name='album_id' id='{{ owner_id }}' {{ mode.initial }}>
+                {% for album_id, album_name in album_list.iteritems() %}
+                  <option value="{{ album_id }}">{{ album_name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td class='type_00'>
+              <input type='radio' name='owner_id' id='{{ owner_id }}' value='{{ owner_id }}' onclick="change_owner('{{ owner_id }}')" {{mode.initial}} >
+            </td>
+            <td class='type_00'>
+              <label for='{{ owner_id }}'>{{ owner_id }}</label>
+            </td>
+            <td class='type_00'>
+              <select name='album_id' id='{{ owner_id }}' {{ mode.initial }}>
+                {% for album_id, album_name in album_list.iteritems() %}
+                  <option value="{{ album_id }}">{{ album_name }}</option>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+
+        {% endif %}
       {% endfor %}
     </table>
     <p style="text-align:center;">
-      <input type='submit' name='action' value='新規登録' style='width:75px;' >
+      <input type='submit' name='action' value='新規登録' style='width:75px;' {{mode.initial}} >
       <input type='submit' name='action' value='アルバム再取得' style='width:115px;' disabled>
       <input type='submit' name='action' value='削除' style='width:75px;' disabled>
     </p>
   </form>
-  </div></div>
+  </div>
+  <div class="main-page">
+  <p>ここから下はきにしないで。</p>
+  </div>
+</div>
 </body>
 </html>
 

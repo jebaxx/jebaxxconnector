@@ -449,10 +449,20 @@ def workerPhoto():
     #:
     try:
 	response = requests.post(requestUrl, headers=headers, params=params, data=body)
+
+    except TimeoutError:
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+	message = u"時間がかかりすぎて#" + str(counter) + u"をアルバムに登録できなかった。"
+	fp = cloudstorage.open(stat_fnext, 'w')
+	fp.write(message.encode('utf-8'))
+	fp.close()
+	return("other error"), _code
+
     except Exception:
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
-	message = "#" + str(counter) + u"をなぜかアルバムに登録できない"
+	message = u"なぜか"#" + str(counter) + u"をアルバムに登録できなかった。"
 	fp = cloudstorage.open(stat_fnext, 'w')
 	fp.write(message.encode('utf-8'))
 	fp.close()
@@ -478,7 +488,7 @@ def workerPhoto():
 	    return("OK"), _code
     else:
 	    logger.error("queued task error : " + str(_code))
-	    message = "何度試しても#" + str(counter) + u"をアルバム登録できなかった。大きすぎたかも。"
+	    message = u"何度試しても#" + str(counter) + u"をアルバム登録がエラーになるよ。"
 	    fp = cloudstorage.open(stat_fnext, 'w')
 	    fp.write(message.encode('utf-8'))
 	    fp.close()
