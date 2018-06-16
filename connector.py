@@ -105,7 +105,7 @@ def config():
 
 	owner_list[owner_id] = pickle.loads(encodedAlbums)
 
-    logger.info("owner_list: " + var_dump(owner_list))
+#    logger.info("owner_list: " + var_dump(owner_list))
 
     #-##############-###-############----###--------------------------
     #-POST内容（フォーム）により処理を振り分け（その２）
@@ -124,9 +124,12 @@ def config():
 	    Line_id = flask.request.form['Line_id']
 
 	    if (flask.request.form['owner_id'] == '-') :
-		del route_list[Line_id]['owner_id']
-		del route_list[Line_id]['album_id']
-		del route_list[Line_id]['album_name']
+		if 'owner_id' in route_list[Line_id] :
+		    del route_list[Line_id]['owner_id']
+		if 'album_id' in route_list[Line_id]:
+		    del route_list[Line_id]['album_id']
+		if 'album_name' in route_list[Line_id]:
+		    del route_list[Line_id]['album_name']
 
 	    else :
 		route_list[Line_id]['owner_id'] = flask.request.form['owner_id']
@@ -176,6 +179,31 @@ def config():
 	mode['initial'] = 'disabled'
 	mode['route_edit'] = ''
 	return flask.render_template('connector_config.html', owner_list=owner_list, route_info=route_info, route_list=route_list, mode=mode);
+
+    elif (flask.request.method == 'POST') and ('raw_album_list' in flask.request.form):
+
+	#::
+	#:: 実験ページ
+	#::
+	logger.info("case of album_list")
+	logger.info(var_dump(flask.request.form))
+	owner_id = flask.request.form['google_account']
+	endpoint = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
+	if ('use_cred' in flask.request.form):
+	    credentials = loadCredentials(owner_id)
+	    params = ( ('access_token', credentials.token), )
+	    response = requests.get(endpoint, params = params)
+	else:
+	    logger.info("url: " +  endpoint)
+	    response = requests.get(endpoint)
+
+#	raw_text = response.text.encode('utf-8')
+	raw_text = response.text
+	logger.info(raw_text[:500])
+	mode = {}
+	mode['initial'] = ''
+	mode['route_edit'] = 'disabled'
+	return flask.render_template('connector_config.html', owner_list=owner_list, raw_text=raw_text, route_list=route_list, mode=mode)
 
     else:
 

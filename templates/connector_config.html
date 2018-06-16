@@ -326,7 +326,7 @@ div.main-page {
         {% if mode.initial == '' %}
           <tr>
             <td class="type_2">
-              <input type='radio' name='owner_id' id='{{ owner_id }}' value='{{ owner_id }}' onclick="change_owner('{{ owner_id }}')" {{mode.initial}} >
+              <input type='radio' name='owner_id' value='{{ owner_id }}' onclick="change_owner('{{ owner_id }}')" {{mode.initial}} >
             </td>
             <td class='type_2'>
               <label for='{{ owner_id }}'>{{ owner_id }}</label>
@@ -342,7 +342,7 @@ div.main-page {
         {% else %}
           <tr>
             <td class='type_00'>
-              <input type='radio' name='owner_id' id='{{ owner_id }}' value='{{ owner_id }}' onclick="change_owner('{{ owner_id }}')" {{mode.initial}} >
+              <input type='radio' name='owner_id' value='{{ owner_id }}' onclick="change_owner('{{ owner_id }}')" {{mode.initial}} >
             </td>
             <td class='type_00'>
               <label for='{{ owner_id }}'>{{ owner_id }}</label>
@@ -367,7 +367,21 @@ div.main-page {
   </form>
   </div>
   <div class="main-page">
-  <p>ここから下はきにしないで。</p>
+  <p>ここから下は実験設備！</p>
+  <form name = "raw_album_list" action="config" method="post">
+    <input type='hidden' name='raw_album_list' value='raw_album_list'>
+    <select name='google_account'>
+    {% for owner_id, album_list in owner_list.iteritems() %}
+      <option value="{{ owner_id }}">{{ owner_id }}</option>
+    {% endfor %}
+    </select>
+    <input type='checkbox' name='use_cred' value="true" checked="checked">use credential<br>
+    <input type='submit' name='action' value='アルバム一覧(RAWデータ)' style='width:210;'>
+    <hr>
+    <textarea name="raw_text" cols="86" rows="40">
+    {{ raw_text }}
+    </textarea>
+  </form>
   </div>
 </div>
 </body>
