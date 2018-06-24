@@ -5,23 +5,24 @@
 <title>PHOTO contribution flow Editor (Source Id of LINE Messaging API --> Album Id of Google Web Album mapping) </title>
 
 <style type="text/css">
-table.route_list {
-	border-collapse:collapse;
-	padding:0;
-	margin:10;
-}
 table {
 	border-collapse:separate;
-	border-spacing:1px;
+	border-spacing:3px;
 	padding:0;
 	margin:10;
 }
-table tr {
-//	border:1px solid #9b9b9b;
-}
-table th , table td {
+th , td {
 	font-size: small;
 	padding:8px 10px 8px 10px;
+	background-color:#ffffff;
+	border-radius:6px;
+	box-shadow: 8px 8px 24px rgba(75,40,75,0.50);
+
+}
+.f_button {
+	border: 1px solid #ababab;
+	box-shadow: 8px 8px 24px rgba(75,40,75,0.50);
+	border-radius:12px;
 }
 .comment {
 	font-size: small;
@@ -53,53 +54,53 @@ div.main-page {
 .with_id {
 }
 .popup_text {
-    display: none;
+	display: none;
 	background-color:#3efe3e;
-    position: absolute;
-    padding: 0px 10px;
+	position: absolute;
+	padding: 0px 10px;
 }
 .with_id:hover + .popup_text {
     display: block;
 }
 .type_10 {
-    color: #4070b0;
+	color: #4070b0;
 	background-color:#c2e0b8;
-    border-right: solid 2px #c0c0c0;
-    border-bottom: solid 2px #c0c0c0;
-    border-top: solid 3px #ffffff;
-    border-left: solid 3px #ffffff;
+#	border-right: solid 2px #c0c0c0;
+#	border-bottom: solid 2px #c0c0c0;
+#	border-top: solid 3px #ffffff;
+#	border-left: solid 3px #ffffff;
 }
 .type_20 {
-    color: #b04070;
+	color: #b04070;
 	background-color:#c2e0b8;
-    border-right: solid 2px #b0b0b0;
-    border-bottom: solid 2px #b0b0b0;
-    border-top: solid 3px #ffffff;
-    border-left: solid 3px #ffffff;
+#	border-right: solid 2px #b0b0b0;
+#	border-bottom: solid 2px #b0b0b0;
+#	border-top: solid 3px #ffffff;
+#	border-left: solid 3px #ffffff;
 }
 .type_1 {
-    color: #4070b0;
-    background-color: #ddeed0;
-    border-right: solid 2px #c0c0c0;
-    border-bottom: solid 2px #c0c0c0;
-    border-top: solid 3px #ffffff;
-    border-left: solid 3px #ffffff;
+	color: #4070b0;
+	background-color: #ddeed0;
+#	border-right: solid 2px #c0c0c0;
+#	border-bottom: solid 2px #c0c0c0;
+#	border-top: solid 3px #ffffff;
+#	border-left: solid 3px #ffffff;
 }
 .type_2 {
-    color: #b04070;
-    background-color: #ddeed0;
-    border-right: solid 2px #b0b0b0;
-    border-bottom: solid 2px #b0b0b0;
-    border-top: solid 3px #ffffff;
-    border-left: solid 3px #ffffff;
+	color: #b04070;
+	background-color: #ddeed0;
+#	border-right: solid 2px #b0b0b0;
+#	border-bottom: solid 2px #b0b0b0;
+#	border-top: solid 3px #ffffff;
+#	border-left: solid 3px #ffffff;
 }
 .type_00 {
-    color: #a0a0a0;
+	color: #a0a0a0;
 	background-color:#e0e0e0;
-    border-right: solid 2px #c0c0c0;
-    border-bottom: solid 2px #c0c0c0;
-    border-top: solid 3px #ffffff;
-    border-left: solid 3px #ffffff;
+#	border-right: solid 2px #c0c0c0;
+#	border-bottom: solid 2px #c0c0c0;
+#	border-top: solid 3px #ffffff;
+#	border-left: solid 3px #ffffff;
 }
 
 
@@ -167,29 +168,31 @@ div.main-page {
 
   <div class="main-page">
   <form name = "route_list" action="config" method="post">
-  <h3>写真転送先一覧</h3>
-  <p>現在のアルバム設定を表示しています。</p>
+  <h3>写真転送先の一覧</h3>
+  <p>現在の友だち一覧です。<br>
+  アカウントごとのアルバム設定状況が分かります。</p>
     <input type='hidden' name='route_list' value='route_list'>
     <table>
       <thead>
         <tr>
-          <th colspan='2'>友だち<small>が投稿した写真を</small></th>
-          <th style="margin:1; padding:0"></th>
-          <th colspan="2"><small>この</small>アルバム<small>に登録する</small></th>
+          <th style="background-color: #eef2ee" colspan='2'>ここに<small>が投稿した写真を</small></th>
+          <th style="background-color: transparent; margin:1; padding:0"> </th>
+          <th colspan="2" style="background-color: #eef2ee"><small>この</small>アルバム<small>に登録する</small></th>
         </tr>
+
         {% if mode.initial == '' %}
           <tr>
             <th colspan="2" width=180 class='type_10'>LINEアカウント</th>
-            <th width=2 style="margin:1; padding:0"></th>
+            <th width=2 style="background-color: transparent; margin:1; padding:0"></th>
             <th width=160 class='type_20'>Googleアカウント</th>
             <th width=160 class='type_20'>アルバム名</th>
           </tr>
         {% else %}
           <tr>
             <th colspan="2" width=180 class='type_00'>LINEアカウント</th>
-            <th width=2 style="margin:1; padding:0"></th>
+            <th width=2 style="background-color: transparent; margin:1; padding:0"></th>
             <th width=160 class='type_00'>Googleアカウント</th>
-            <th width=160 class='type_00'>アルバム名</th>
+            <th width=160 class='type_00'>photoアルバム名</th>
           </tr>
         {% endif %}
       </thead>
@@ -204,7 +207,7 @@ div.main-page {
               <label class='with_id' for='{{ label }}'>{{ route_info['name'] }}</label>
               <p class='popup_text'>id = {{ Line_id }}</p>
             </td>
-            <td style="margin:1; padding:0"></th>
+            <td style="background-color: transparent; margin:1; padding:0"></th>
             <td class="type_2"><label for='{{ label }}'>{{ route_info.owner_id }}</label></td>
             <td class="type_2">
               <label class='with_id' for='{{ label }}'>{{ route_info.album_name }}</label>
@@ -220,7 +223,7 @@ div.main-page {
               <label class='with_id' for='{{ label }}'>{{ route_info['name'] }}</label>
               <p class='popup_text'>id = {{ Line_id }}</p>
             </td>
-            <td style="margin:1; padding:0"></th>
+            <td style="background-color: transparent; margin:1; padding:0"></th>
             <td class="type_00"><label for='{{ label }}'>{{ route_info.owner_id }}</label></td>
             <td class="type_00">
               <label class='with_id' for='{{ label }}'>{{ route_info.album_name }}</label>
@@ -231,7 +234,7 @@ div.main-page {
       {% endfor %}
     </table>
     <p style="text-align:center;">
-    <input type='submit' name='action' value='登録先を設定・変更' style='width:1333x;' oncallback="_post_action='edit'" , disabled>
+    <input class='f_button' type='submit' name='action' value='登録先を設定・変更' style='width:160px;' oncallback="_post_action='edit'" , disabled>
     </p>
   </form>
   <hr>
@@ -298,14 +301,14 @@ div.main-page {
       </tr>
     </table>
     <p style="text-align:center;">
-    <input type='submit' name='action' value='登録' style='width:75px;' , disabled>
-    <input type='submit' name='action' value='キャンセル' style='width:85px;'  {{ mode.route_edit }}>
+    <input class='f_button' type='submit' name='action' value='登録' style='width:75px;' , disabled>
+    <input class='f_button' type='submit' name='action' value='キャンセル' style='width:105px;'  {{ mode.route_edit }}>
     </p>
   </form>
   <hr>
   <h3>Googleアカウントを登録する</h3>
-  <p>ここにGoogleアカウントを登録するには、ユーザ認証が必要です。<br>
-  新規登録ボタンを押すと、「Googleにログイン」画面に遷移します。</p>
+  <p>ここにアカウントを登録するには、ユーザ認証が必要です。<br>
+  新規登録ボタンを押すと、「Googleにログイン」画面に移動します。</p>
   <form name = "album_owners" action="config" method="post">
     <input type='hidden' name='album_owners' value='album_owners'>
     <table>
@@ -360,9 +363,9 @@ div.main-page {
       {% endfor %}
     </table>
     <p style="text-align:center;">
-      <input type='submit' name='action' value='新規登録' style='width:75px;' {{mode.initial}} >
-      <input type='submit' name='action' value='アルバム再取得' style='width:115px;' disabled>
-      <input type='submit' name='action' value='削除' style='width:75px;' disabled>
+      <input class='f_button' type='submit' name='action' value='新規登録' style='width:95px;' {{mode.initial}} >
+      <input class='f_button' type='submit' name='action' value='アルバム再取得' style='width:135px;' disabled>
+      <input class='f_button' type='submit' name='action' value='削除' style='width:75px;' disabled>
     </p>
   </form>
   </div>
@@ -378,7 +381,7 @@ div.main-page {
     <input type='checkbox' name='use_cred' value="true" checked="checked">use credential<br>
     <input type='submit' name='action' value='アルバム一覧(RAWデータ)' style='width:210;'>
     <hr>
-    <textarea name="raw_text" cols="86" rows="40">
+    <textarea class='f_button' name="raw_text" cols="86" rows="40">
     {{ raw_text }}
     </textarea>
   </form>
