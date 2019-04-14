@@ -18,7 +18,9 @@ import cloudstorage
 
 
 CLIENT_SECRETS_FILE = "client_secret.json"
-SCOPES =["https://picasaweb.google.com/data/", 
+#SCOPES =["https://picasaweb.google.com/data/", 
+SCOPES =["https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata",
+	"https://www.googleapis.com/auth/photoslibrary.appendonly",
 	"https://www.googleapis.com/auth/userinfo.profile",
 	"https://www.googleapis.com/auth/userinfo.email"]
 
@@ -188,14 +190,18 @@ def config():
 	logger.info("case of album_list")
 	logger.info(var_dump(flask.request.form))
 	owner_id = flask.request.form['google_account']
-	endpoint = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
+#	endpoint = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
+	endpoint = "https://photoslibrary.googleapis.com/v1/albums"
+	params = ( ('pageSize', 50), )
+
 	if ('use_cred' in flask.request.form):
 	    credentials = loadCredentials(owner_id)
-	    params = ( ('access_token', credentials.token), )
-	    response = requests.get(endpoint, params = params)
+	    headers = {'Authorization': 'Bearer ' + credentials.token, }
+#	    params = ( ('access_token', credentials.token), )
+	    response = requests.get(endpoint, params = params, headers = headers)
 	else:
 	    logger.info("url: " +  endpoint)
-	    response = requests.get(endpoint)
+	    response = requests.get(endpoint, params = params)
 
 #	raw_text = response.text.encode('utf-8')
 	raw_text = response.text
@@ -250,6 +256,7 @@ def oauth2callback():
     logger.info('in oauth2callback.')
 
 #    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'	# You can activate the line to be able to run at a test environment.
+    os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
     state = flask.session['state']
 
     try:
@@ -269,6 +276,9 @@ def oauth2callback():
 	saveCredentials(userId, credentials)
 
 	albums = getAlbums(userId, credentials)
+
+	if not 'pyonta-album' in albums:
+	    createAlbum(credentials, 'pyonta-album')
 
     except Exception:
 	logger.error("Exception in authorization callback")
@@ -350,21 +360,23 @@ def getAlbums(userId, credentials):
     logger.setLevel(logging.DEBUG)
     logger.debug("in getAlbum")
 
-    url_albumList = "https://picasaweb.google.com/data/feed/api/user/" + userId
-    params = ( ('access_token', credentials.token), )
+    url_albumList = "https://photoslibrary.googleapis.com/v1/albums"
+    params = ( ('pageSize', 50), )
+    headers = {'Authorization': 'Bearer ' + credentials.token, }
 
-    response = requests.get(url_albumList, params = params)
+    response = requests.get(url_albumList, params = params, headers = headers)
+    logger.info("response of album list : " + response.text);
 
-    import xml.etree.ElementTree
-    root = xml.etree.ElementTree.fromstring(response.text.encode('utf-8'))
-    nsmap = {'gphoto' : "http://schemas.google.com/photos/2007", 'Atom' : "http://www.w3.org/2005/Atom"}
+    j_albums = json.loads(response.text)
+#    logger.info("j_albums : " + var_dump(j_albums));
 
     albums = {'-':'<default>'}
-    for entry in root.findall(".//Atom:entry", nsmap):
-    	albums[entry.find(".//gphoto:id", nsmap).text] = entry.find(".//Atom:title", nsmap).text
+    for entry in j_albums['albums']:
+#	logger.info("entry : " + var_dump(entry));
+	albums[entry['id']] = entry['title']
 
     encodedAlbums = pickle.dumps(albums)
-    logger.info("album list : " + encodedAlbums);
+#    logger.info("album list : " + encodedAlbums);
 
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
     fileName = bucketName + "/album_" + userId + ".pickle"
@@ -375,6 +387,44 @@ def getAlbums(userId, credentials):
     fh.close()
 
     return(albums)
+
+###----Albumを作成する----
+###
+def createAlbum(credentials, album_name):
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    logger.debug("in createAlbum")
+
+    url_createAlbum = "https://photoslibrary.googleapis.com/v1/albums"
+    body = { 'album': { 'title': album_name }}
+
+    headers = { 'Authorization': 'Bearer ' + credentials.token, 
+    		'Content-Type': 'application/json' }
+
+    logger.info(var_dump(headers))
+
+    try:
+	response = requests.post(url_createAlbum, headers=headers, data = json.dumps(body))
+
+    except Exception:
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+	message = u"アルバム作成に失敗した。"
+	return("other error"), 500
+
+    #:
+    #: Check Result
+    #:
+    _code = response.status_code
+
+    if _code >= 200 and _code <= 299:
+	logger.info("album create result code : " + str(_code))
+	return("OK"), _code
+    else:
+	logger.error("album crreate error : " + str(_code))
+	return("enqueue error"), _code
+
 
 ###-------------------------------------------------------------------------------
 ###	写真登録タスクQueue処理
@@ -401,13 +451,6 @@ def workerPhoto():
 
     logger.info("user name = " + userName)
 
-    if (album_id == '-'):
-	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
-    else:
-	requestUrl = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id + '/albumid/' + album_id
-    logger.info("photo post endpoint = " + requestUrl)
-
-    _code = 500
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 
     #:
@@ -438,31 +481,16 @@ def workerPhoto():
 	fp = cloudstorage.open(stat_fnext, 'w')
 	fp.write(message.encode('utf-8'))
 	fp.close()
-	return  u"auth_error", _code
-
-    ### rulfetch config: set TIMEOUT = 600s
-    from google.appengine.api import urlfetch
-    urlfetch.set_default_fetch_deadline(600)
+	return  u"auth_error", 500
 
     #:
-    #: setup request
+    #: setup content
     #:
-    xml_template = u"""<entry xmlns="http://www.w3.org/2005/Atom">
-      <title>{0}</title>
-      <category scheme="http://schemas.google.com/g/2005#kind"
-        term="http://schemas.google.com/photos/2007#photo"/>
-     </entry>"""
-
     try:
 	filepath = bucketName + '/photo_queue/' + filename
 	fh = cloudstorage.open(filepath, mode='r')
-	body, content_type = encode_multipart_related(
-				xml_template.format(userName + '_' + str(counter) + '.' + f_ext),
-				fh.read(),
-				'image/jpeg' if (re.search("\.(jpeg|jpg)", filename) != None) else 'video/mp4')
-	fh.close()
-	headers = { 'Content-Type': content_type }
-	params = { 'access_token': credentials.token, 'uploadType': 'multipart' }
+	body = fh.read()
+
     except Exception:
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
@@ -470,31 +498,44 @@ def workerPhoto():
 	fp = cloudstorage.open(stat_fnext, 'w')
 	fp.write(message.encode('utf-8'))
 	fp.close()
-	return("other error"), _code
+	return("other error"), 500
 
     #:
-    #: POST request to Photo Album
+    #: POST content
     #:
+    ### rulfetch config: set TIMEOUT = 600s
+    from google.appengine.api import urlfetch
+    urlfetch.set_default_fetch_deadline(600)
+    userName = 'temp'
+
+    requestUrl = 'https://photoslibrary.googleapis.com/v1/uploads'
+    headers = { 'Authorization': 'Bearer ' + credentials.token, 
+		'Content-Type': 'application/octet-stream',
+		'X-Goog-Upload-File-Name': userName + '_' + str(counter) + f_ext,
+		'X-Goog-Upload-Protocol': 'raw'  }
+
+    logger.info(var_dump(headers))
+
     try:
-	response = requests.post(requestUrl, headers=headers, params=params, data=body)
+	response = requests.post(requestUrl, headers=headers, data=body)
 
-    except TimeoutError:
-	logger.error("Exception in queue handler")
-	logger.error(traceback.print_exc())
-	message = u"時間がかかりすぎて#" + str(counter) + u"をアルバムに登録できなかった。"
-	fp = cloudstorage.open(stat_fnext, 'w')
-	fp.write(message.encode('utf-8'))
-	fp.close()
-	return("other error"), _code
+#    except TimeoutError:
+#	logger.error("Exception in queue handler")
+#	logger.error(traceback.print_exc())
+#	message = u"時間がかかりすぎて#" + str(counter) + u"をアルバムに登録できなかった。"
+#	fp = cloudstorage.open(stat_fnext, 'w')
+#	fp.write(message.encode('utf-8'))
+#	fp.close()
+#	return("other error"), 500
 
     except Exception:
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
-	message = u"なぜか"#" + str(counter) + u"をアルバムに登録できなかった。"
+	message = u"なぜか#" + str(counter) + u"をアルバムに登録できなかった。"
 	fp = cloudstorage.open(stat_fnext, 'w')
 	fp.write(message.encode('utf-8'))
 	fp.close()
-	return("other error"), _code
+	return("other error"), 500
 
     #:
     #: Check Result
@@ -502,8 +543,62 @@ def workerPhoto():
     _code = response.status_code
     _req_h  = response.request.headers
     _req_b  = response.request.body[:400]
+    upload_token = response.content.decode('utf-8')
     logger.info("request headers : " + var_dump(_req_h))
     logger.info("request body : " + _req_b)
+    logger.info("upload_token : " + upload_token)
+
+    if _code >= 200 and _code <= 299:
+	    logger.info("upload coplete : " + str(_code))
+    else:
+	    logger.error("queued task error : " + str(_code))
+	    message = u"何度試しても#" + str(counter) + u"をアルバム登録がエラーになるよ。"
+	    fp = cloudstorage.open(stat_fnext, 'w')
+	    fp.write(message.encode('utf-8'))
+	    fp.close()
+	    return("enqueue error"), _code
+
+    #:
+    #: Create MediaItem of updated content
+    #:
+    requestUrl = 'https://photoslibrary.googleapis.com/v1/mediaItems:batchCreate'
+
+    headers = { 'Authorization': 'Bearer ' + credentials.token, 
+		'Accept': 'application/json',
+		'Content-Type': 'application/json' }
+
+    body = { 'newMediaItems': [{'simpleMediaItem': {'uploadToken': upload_token}}], }
+    if (album_id != '-'): body['albumId'] = album_id
+
+    logger.info("mediaItems : " + json.dumps(body))
+
+    try:
+	response = requests.post(requestUrl, headers = headers, data = json.dumps(body))
+
+#    except TimeoutError:
+#	logger.error("Exception in queue handler")
+#	logger.error(traceback.print_exc())
+#	message = u"時間がかかりすぎて#" + str(counter) + u"をアルバムに登録できなかった。"
+#	fp = cloudstorage.open(stat_fnext, 'w')
+#	fp.write(message.encode('utf-8'))
+#	fp.close()
+#	return("other error"), 500
+
+    except Exception:
+	logger.error("Exception in queue handler")
+	logger.error(traceback.print_exc())
+	message = u"なぜか#" + str(counter) + u"をアルバムに登録できなかった。"
+	fp = cloudstorage.open(stat_fnext, 'w')
+	fp.write(message.encode('utf-8'))
+	fp.close()
+	return("other error"), 500
+
+    #:
+    #: Check Result
+    #:
+    _code = response.status_code
+    newMediaItemResults = json.loads(response.content)
+    logger.info("newMediaItemResults:" + var_dump(newMediaItemResults))
 
     if _code >= 200 and _code <= 299:
 	    cloudstorage.delete(filepath)
@@ -521,6 +616,8 @@ def workerPhoto():
 	    fp.write(message.encode('utf-8'))
 	    fp.close()
 	    return("enqueue error"), _code
+
+
 
 ###----create multipart request body----
 ###
