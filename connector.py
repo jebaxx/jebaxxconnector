@@ -190,20 +190,18 @@ def config():
 	logger.info("case of album_list")
 	logger.info(var_dump(flask.request.form))
 	owner_id = flask.request.form['google_account']
-#	endpoint = 'https://picasaweb.google.com/data/feed/api/user/' + owner_id
 	endpoint = "https://photoslibrary.googleapis.com/v1/albums"
 	params = ( ('pageSize', 50), )
 
 	if ('use_cred' in flask.request.form):
 	    credentials = loadCredentials(owner_id)
 	    headers = {'Authorization': 'Bearer ' + credentials.token, }
-#	    params = ( ('access_token', credentials.token), )
 	    response = requests.get(endpoint, params = params, headers = headers)
 	else:
 	    logger.info("url: " +  endpoint)
 	    response = requests.get(endpoint, params = params)
 
-#	raw_text = response.text.encode('utf-8')
+#	raw_text = response.text.decode('utf-8')
 	raw_text = response.text
 	logger.info(raw_text[:500])
 	mode = {}
@@ -279,6 +277,7 @@ def oauth2callback():
 
 	if not 'pyonta-album' in albums:
 	    createAlbum(credentials, 'pyonta-album')
+	    albums = getAlbums(userId, credentials)
 
     except Exception:
 	logger.error("Exception in authorization callback")
@@ -363,20 +362,25 @@ def getAlbums(userId, credentials):
     url_albumList = "https://photoslibrary.googleapis.com/v1/albums"
     params = ( ('pageSize', 50), )
     headers = {'Authorization': 'Bearer ' + credentials.token, }
-
-    response = requests.get(url_albumList, params = params, headers = headers)
-    logger.info("response of album list : " + response.text);
-
-    j_albums = json.loads(response.text)
-#    logger.info("j_albums : " + var_dump(j_albums));
-
     albums = {'-':'<default>'}
-    for entry in j_albums['albums']:
-#	logger.info("entry : " + var_dump(entry));
-	albums[entry['id']] = entry['title']
+
+    while 1 :
+	logger.info('params = ' + var_dump(params))
+	response = requests.get(url_albumList, params = params, headers = headers)
+	logger.info("response of album list : " + response.text);
+
+	j_albums = json.loads(response.text)
+
+	for entry in j_albums['albums']:
+	    albums[entry['id']] = entry['title']
+
+	if 'nextPageToken' not in j_albums:
+	    logger.info("next token is not exist")
+	    break
+
+	params = ( ('pageSize', 50), ('pageToken', j_albums['nextPageToken']) )
 
     encodedAlbums = pickle.dumps(albums)
-#    logger.info("album list : " + encodedAlbums);
 
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
     fileName = bucketName + "/album_" + userId + ".pickle"

@@ -274,6 +274,14 @@ div.main-page {
             </select>
           </td>
         </tr>
+        <tr>
+          <td class='type_20'>新規アルバム名</td>
+          <td class='type_2'>
+            <input type=text name="new_album" size=30 {{ mode.route_edit }}>
+            <br><small>新しく作りたい場合はアルバム名を入力</small>
+          </td>
+        </tr>
+
       {% else %}
         <tr>
           <td width=180 class='type_00'>LINEアカウント</td>
@@ -294,6 +302,12 @@ div.main-page {
           <td class='type_00'>
             <select name='album_id' id='select_album_id' {{ mode.route_edit }}>
             </select>
+          </td>
+        <tr>
+          <td class='type_00'>新規アルバム名</td>
+          <td class='type_00'>
+            <input type=text name="new_album" {{ mode.route_edit }}>
+            <br><small>新しく作りたい場合はアルバム名を入力</small>
           </td>
         </tr>
 
