@@ -27,6 +27,8 @@ SCOPES =["https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata"
 app = flask.Flask(__name__)
 app.secret_key = "*** SOME SECRET VALUE ***"
 
+loggingLevel = logging.INFO
+
 #@app.errorhandler(404)
 #def error_handler(error):
 #
@@ -46,8 +48,10 @@ app.secret_key = "*** SOME SECRET VALUE ***"
 def config():
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(loggingLevel)
     
+    logger.info("config method = " + flask.request.method)
+
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 
     #-##############-###-############----###--------------------------
@@ -55,11 +59,13 @@ def config():
 
     if (flask.request.method == 'POST') and ('album_owners' in flask.request.form):
 
+	logger.info("Edit google account list")
+
 	#-##############-###-######---------
 	#- owner_listフォームからのPOST
 	#  押下されたボタンにより、Owner登録／アルバム再取得／Owner削除を行う
 
-	logger.info("request: " + var_dump(flask.request.form))
+	logger.debug("request: " + var_dump(flask.request.form))
 
 	if (flask.request.form['action'] == u'新規登録') :
 	    return flask.redirect('authorize')
@@ -67,13 +73,15 @@ def config():
 	elif (flask.request.form['action'] == u'アルバム再取得') :
 	    credentials = loadCredentials(flask.request.form['owner_id'])
 	    owner_id = flask.request.form['owner_id']
+	    logger.info("Get album list of " + owner_id)
 	    getAlbums(owner_id, credentials)
 
 	elif (flask.request.form['action'] == u'削除') :
 	    owner_id = flask.request.form['owner_id']
+	    logger.info("Delete google account :" + owner_id)
 	    bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 	    fileName = bucketName + "/album_" + owner_id + ".pickle"
-	    logger.info('** delete file : ' + fileName)
+	    logger.debug('** delete file : ' + fileName)
 	    cloudstorage.delete(fileName)
 	    fileName = bucketName + "/cred_" + owner_id + ".pickle"
 	    cloudstorage.delete(fileName)
@@ -86,7 +94,7 @@ def config():
     route_list = json.loads(fh.read())
     fh.close()
 
-    logger.info("route_list: " + var_dump(route_list))
+    logger.debug("route_list: " + var_dump(route_list))
 
     #-##############-###-############----###--------------------------
     #- 表示データの読み込み（owner_list）
@@ -97,7 +105,7 @@ def config():
     owner_list = {}
 
     for fileobj in files:
-	logger.info('** file path = ' + fileobj.filename)
+	logger.debug('** file path = ' + fileobj.filename)
 	matched = re.search("album_(.*)\.pickle$", fileobj.filename)
 	owner_id = matched.group(1)
 
@@ -107,25 +115,32 @@ def config():
 
 	owner_list[owner_id] = pickle.loads(encodedAlbums)
 
-#    logger.info("owner_list: " + var_dump(owner_list))
+    logger.debug("owner_list: " + var_dump(owner_list))
 
     #-##############-###-############----###--------------------------
     #-POST内容（フォーム）により処理を振り分け（その２）
 
     if (flask.request.method == 'POST') and ('route_edit' in flask.request.form):
 
+	logger.info("Edit photo delivary root")
+
 	#-##############-###-######---------
 	#- route_editフォームからのPOST
 	#  登録ボタンが押されていたら、POSTされたFormデータ内容をroute_listに反映
 
-    	logger.info("request: " + var_dump(flask.request.form))
+    	logger.debug("request: " + var_dump(flask.request.form))
 
 	if (flask.request.form['action'] == u'登録') :
-
 
 	    Line_id = flask.request.form['Line_id']
 
 	    if (flask.request.form['owner_id'] == '-') :
+
+		#-##############-###-######---------
+		#- 結び付きの解消
+
+		logger.info(u"Remove delivary setting of : " + flask.request.form['Line_name'])
+
 		if 'owner_id' in route_list[Line_id] :
 		    del route_list[Line_id]['owner_id']
 		if 'album_id' in route_list[Line_id]:
@@ -133,7 +148,42 @@ def config():
 		if 'album_name' in route_list[Line_id]:
 		    del route_list[Line_id]['album_name']
 
+	    elif (flask.request.form['new_album'].strip() != ""):
+
+		#-##############-###-######---------
+		#- 新規アルバム作成
+
+		logger.info(u"Create new album '{album}' owned by {owner} and assign to {name}".format(
+				album=flask.request.form['new_album'],
+				owner=flask.request.form['owner_id'], 
+				name=flask.request.form['Line_name']))
+
+		credentials = loadCredentials(flask.request.form['owner_id'])
+		album_id = createAlbum(credentials, flask.request.form['new_album'])
+
+		route_list[Line_id]['owner_id'] = flask.request.form['owner_id']
+		route_list[Line_id]['album_id'] = album_id
+		route_list[Line_id]['album_name'] = flask.request.form['new_album']
+		route_list[Line_id]['name'] = flask.request.form['Line_name']
+
+		# update owner_list and it's persistent data
+		owner_list[flask.request.form['owner_id']][album_id] = flask.request.form['new_album']
+		encodedAlbums = pickle.dumps(owner_list[flask.request.form['owner_id']])
+		bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
+		fileName = bucketName + "/album_" + flask.request.form['owner_id'] + ".pickle"
+		fh = cloudstorage.open(fileName, 'w')
+		fh.write(encodedAlbums)
+		fh.close()
+
 	    else :
+		#-##############-###-######---------
+		#- アルバム選択（又は付け替え）
+
+		logger.info(u"Assign album '{album}' owned by {owner} to {name}".format(
+				album=owner_list[flask.request.form['owner_id']][flask.request.form['album_id']],
+				owner=flask.request.form['owner_id'], 
+				name=flask.request.form['Line_name']))
+
 		route_list[Line_id]['owner_id'] = flask.request.form['owner_id']
 		route_list[Line_id]['album_id'] = flask.request.form['album_id']
 		route_list[Line_id]['album_name'] = owner_list[flask.request.form['owner_id']][flask.request.form['album_id']]
@@ -155,17 +205,19 @@ def config():
 	#- route_listフォームからのPOST
 	#- route_infoデータを生成してroute_editフォーム(登録ルート編集)の初期値とする
 
-    	logger.info("request: " + var_dump(flask.request.form))
 	route_info = {}
 
 	Line_id = flask.request.form['selected_route']
 	selected_owner_id = route_list[Line_id].get('owner_id', '-')
 	selected_album_id = route_list[Line_id].get('album_id', '-')
 
-	route_info['Line_id']      = Line_id
-	route_info['Line_name'] = route_list[Line_id]['name']
-	route_info['owner_id'] = { '-': ('selected' if selected_owner_id == '-' else '') ,  }
-	route_info['album_list']   = {}
+	logger.info(u"Select delivary root setting of {name}".format(name=route_list[Line_id]['name']))
+	logger.debug("request: " + var_dump(flask.request.form))
+
+	route_info['Line_id']    = Line_id
+	route_info['Line_name']  = route_list[Line_id]['name']
+	route_info['owner_id']   = { '-': ('selected' if selected_owner_id == '-' else '') ,  }
+	route_info['album_list'] = {}
 
 	for owner_id in owner_list.keys():
 	    route_info['owner_id'][owner_id] = 'selected' if owner_id == selected_owner_id else ''
@@ -175,7 +227,7 @@ def config():
 		isSelected = 'selected' if album_id == selected_album_id else ''
 		route_info['album_list'][album_id] = { 'name': album_name, 'selected': isSelected }
 
-	logger.info("route_info : " +  var_dump(route_info))
+	logger.debug("route_info : " +  var_dump(route_info))
 
 	mode = {}
 	mode['initial'] = 'disabled'
@@ -188,7 +240,7 @@ def config():
 	#:: 実験ページ
 	#::
 	logger.info("case of album_list")
-	logger.info(var_dump(flask.request.form))
+	logger.debug(var_dump(flask.request.form))
 	owner_id = flask.request.form['google_account']
 	endpoint = "https://photoslibrary.googleapis.com/v1/albums"
 	params = ( ('pageSize', 50), )
@@ -201,9 +253,8 @@ def config():
 	    logger.info("url: " +  endpoint)
 	    response = requests.get(endpoint, params = params)
 
-#	raw_text = response.text.decode('utf-8')
 	raw_text = response.text
-	logger.info(raw_text[:500])
+	logger.debug(raw_text[:500])
 	mode = {}
 	mode['initial'] = ''
 	mode['route_edit'] = 'disabled'
@@ -211,6 +262,7 @@ def config():
 
     else:
 
+	logger.debug("draw page")
 	mode = {}
 	mode['initial'] = ''
 	mode['route_edit'] = 'disabled'
@@ -226,7 +278,7 @@ def config():
 def authorize():
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(loggingLevel)
     logger.info('in authorize')
 
     try:
@@ -250,7 +302,7 @@ def authorize():
 def oauth2callback():
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(loggingLevel)
     logger.info('in oauth2callback.')
 
 #    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'	# You can activate the line to be able to run at a test environment.
@@ -270,12 +322,12 @@ def oauth2callback():
 	logger.info(var_dump(credentials))
 
 	userId = get_userId(credentials)
-	logger.info('userId: '+ userId + ' from credentials')
+	logger.info('userId: '+ userId + ' acquired from user profile')
 	saveCredentials(userId, credentials)
 
 	albums = getAlbums(userId, credentials)
 
-	if not 'pyonta-album' in albums:
+	if not 'pyonta-album' in albums.values():
 	    createAlbum(credentials, 'pyonta-album')
 	    albums = getAlbums(userId, credentials)
 
@@ -290,14 +342,13 @@ def oauth2callback():
 def get_userId(credentials):
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(loggingLevel)
     logger.info('in get_userId.')
 
     url_profile = "https://www.googleapis.com/oauth2/v3/tokeninfo"
     params = ( ('id_token', credentials.id_token), )
     response = requests.get(url_profile, params = params)
-
-    logger.info("acquired json file: " + response.text)
+    logger.debug("acquired json profile: " + response.text)
 
     profile = json.loads(response.text)
     mailaddr = profile['email']
@@ -310,12 +361,12 @@ def get_userId(credentials):
 def saveCredentials(userId, credentials) :
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(loggingLevel)
     logger.info('in saveCredentials.')
 
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
     fileName = bucketName + '/cred_' + userId + '.pickle'
-    logger.info('** file name = ' + fileName)
+    logger.debug('** file name = ' + fileName)
 
     fh = cloudstorage.open(fileName, 'w')
     fh.write(pickle.dumps(credentials))
@@ -327,12 +378,12 @@ def saveCredentials(userId, credentials) :
 def loadCredentials(userId):
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(loggingLevel)
     logger.info('in loadCredenitals.')
 
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
     fileName = bucketName + '/cred_' + userId + '.pickle'
-    logger.info('** file name to be loaded is ' + fileName)
+    logger.debug('** file name to be loaded is ' + fileName)
 
     fh = cloudstorage.open(fileName)
     credentials = pickle.loads(fh.read())
@@ -343,7 +394,7 @@ def loadCredentials(userId):
 	import google.auth.transport.requests
 	request = google.auth.transport.requests.Request()
 	credentials.refresh(request)
-	logger.info(var_dump(credentials))
+	logger.info("refreshed credential acquired: "+ var_dump(credentials))
 
 	fh = cloudstorage.open(fileName, 'w')
 	fh.write(pickle.dumps(credentials))
@@ -356,8 +407,8 @@ def loadCredentials(userId):
 def getAlbums(userId, credentials):
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("in getAlbum")
+    logger.setLevel(loggingLevel)
+    logger.info("in getAlbum")
 
     url_albumList = "https://photoslibrary.googleapis.com/v1/albums"
     params = ( ('pageSize', 50), )
@@ -365,9 +416,8 @@ def getAlbums(userId, credentials):
     albums = {'-':'<default>'}
 
     while 1 :
-	logger.info('params = ' + var_dump(params))
 	response = requests.get(url_albumList, params = params, headers = headers)
-	logger.info("response of album list : " + response.text);
+	logger.debug("response of album list : " + response.text);
 
 	j_albums = json.loads(response.text)
 
@@ -384,7 +434,7 @@ def getAlbums(userId, credentials):
 
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
     fileName = bucketName + "/album_" + userId + ".pickle"
-    logger.info('** file name = ' + fileName)
+    logger.debug('** file name = ' + fileName)
 
     fh = cloudstorage.open(fileName, 'w')
     fh.write(encodedAlbums)
@@ -397,8 +447,8 @@ def getAlbums(userId, credentials):
 def createAlbum(credentials, album_name):
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("in createAlbum")
+    logger.setLevel(loggingLevel)
+    logger.info(u"in createAlbum name = " + album_name)
 
     url_createAlbum = "https://photoslibrary.googleapis.com/v1/albums"
     body = { 'album': { 'title': album_name }}
@@ -406,7 +456,7 @@ def createAlbum(credentials, album_name):
     headers = { 'Authorization': 'Bearer ' + credentials.token, 
     		'Content-Type': 'application/json' }
 
-    logger.info(var_dump(headers))
+    logger.debug("request headers = " + var_dump(headers))
 
     try:
 	response = requests.post(url_createAlbum, headers=headers, data = json.dumps(body))
@@ -415,7 +465,7 @@ def createAlbum(credentials, album_name):
 	logger.error("Exception in queue handler")
 	logger.error(traceback.print_exc())
 	message = u"アルバム作成に失敗した。"
-	return("other error"), 500
+	return(-1)
 
     #:
     #: Check Result
@@ -423,11 +473,17 @@ def createAlbum(credentials, album_name):
     _code = response.status_code
 
     if _code >= 200 and _code <= 299:
+
+	_g_album = json.loads(response.content)
+	album_id = _g_album['id']
 	logger.info("album create result code : " + str(_code))
-	return("OK"), _code
+	logger.info("album id = " + album_id)
+
+	return(album_id)
+
     else:
 	logger.error("album crreate error : " + str(_code))
-	return("enqueue error"), _code
+	return(-1)
 
 
 ###-------------------------------------------------------------------------------
@@ -442,10 +498,10 @@ def createAlbum(credentials, album_name):
 def workerPhoto():
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("in Photo queue handler")
+    logger.setLevel(loggingLevel)
+    logger.info("in Photo queue handler")
 
-    logger.info(var_dump(flask.request.form))
+    logger.debug(var_dump(flask.request.form))
     filename = flask.request.form['file']
     owner_id = flask.request.form['owner_id']
     album_id = flask.request.form['album_id']
@@ -453,7 +509,7 @@ def workerPhoto():
     counter  = flask.request.form['counter']
     userName = flask.request.form['userName']
 
-    logger.info("user name = " + userName)
+    logger.info("user name : " + userName)
 
     bucketName = os.environ.get('BUCKET_NAME', '/' + app_identity.get_default_gcs_bucket_name())
 
@@ -471,6 +527,7 @@ def workerPhoto():
     except StopIteration:
 	stat_counter = '0'
 
+    logger.info("retry_count = " + str(stat_counter))
     stat_fnext = bucketName + '/photo_queue/' + f_body + '.' + format(int(stat_counter) + 1, "03d") 
 
     #:
@@ -510,27 +567,23 @@ def workerPhoto():
     ### rulfetch config: set TIMEOUT = 600s
     from google.appengine.api import urlfetch
     urlfetch.set_default_fetch_deadline(600)
-    userName = 'temp'
+
+#    logger.debug("type of userName = " + str(type(userName)))		= unicode
+#    logger.debug("type of '_' = " + str(type('_')))			= str
+#    logger.debug("type of counter = " + str(type(counter)))		= unicode
+#    logger.debug("type of f_ext = " + str(type(f_ext)))		= unicode
 
     requestUrl = 'https://photoslibrary.googleapis.com/v1/uploads'
     headers = { 'Authorization': 'Bearer ' + credentials.token, 
 		'Content-Type': 'application/octet-stream',
-		'X-Goog-Upload-File-Name': userName + '_' + str(counter) + f_ext,
+#		'X-Goog-Upload-File-Name': userName + '_'.decode('utf-8') + counter + f_ext,
+		'X-Goog-Upload-File-Name': 'photo_' + counter + f_ext,
 		'X-Goog-Upload-Protocol': 'raw'  }
 
-    logger.info(var_dump(headers))
+    logger.debug(var_dump(headers))
 
     try:
 	response = requests.post(requestUrl, headers=headers, data=body)
-
-#    except TimeoutError:
-#	logger.error("Exception in queue handler")
-#	logger.error(traceback.print_exc())
-#	message = u"時間がかかりすぎて#" + str(counter) + u"をアルバムに登録できなかった。"
-#	fp = cloudstorage.open(stat_fnext, 'w')
-#	fp.write(message.encode('utf-8'))
-#	fp.close()
-#	return("other error"), 500
 
     except Exception:
 	logger.error("Exception in queue handler")
@@ -548,12 +601,12 @@ def workerPhoto():
     _req_h  = response.request.headers
     _req_b  = response.request.body[:400]
     upload_token = response.content.decode('utf-8')
-    logger.info("request headers : " + var_dump(_req_h))
-    logger.info("request body : " + _req_b)
+    logger.debug("request headers : " + var_dump(_req_h))
+    logger.debug("request body : " + _req_b)
     logger.info("upload_token : " + upload_token)
 
     if _code >= 200 and _code <= 299:
-	    logger.info("upload coplete : " + str(_code))
+	    logger.info("upload completed : " + str(_code))
     else:
 	    logger.error("queued task error : " + str(_code))
 	    message = u"何度試しても#" + str(counter) + u"をアルバム登録がエラーになるよ。"
@@ -574,19 +627,10 @@ def workerPhoto():
     body = { 'newMediaItems': [{'simpleMediaItem': {'uploadToken': upload_token}}], }
     if (album_id != '-'): body['albumId'] = album_id
 
-    logger.info("mediaItems : " + json.dumps(body))
+    logger.debug("mediaItems : " + json.dumps(body))
 
     try:
 	response = requests.post(requestUrl, headers = headers, data = json.dumps(body))
-
-#    except TimeoutError:
-#	logger.error("Exception in queue handler")
-#	logger.error(traceback.print_exc())
-#	message = u"時間がかかりすぎて#" + str(counter) + u"をアルバムに登録できなかった。"
-#	fp = cloudstorage.open(stat_fnext, 'w')
-#	fp.write(message.encode('utf-8'))
-#	fp.close()
-#	return("other error"), 500
 
     except Exception:
 	logger.error("Exception in queue handler")
@@ -602,7 +646,7 @@ def workerPhoto():
     #:
     _code = response.status_code
     newMediaItemResults = json.loads(response.content)
-    logger.info("newMediaItemResults:" + var_dump(newMediaItemResults))
+    logger.debug("newMediaItemResults:" + var_dump(newMediaItemResults))
 
     if _code >= 200 and _code <= 299:
 	    cloudstorage.delete(filepath)
@@ -611,7 +655,7 @@ def workerPhoto():
 	    except NameError:
 	    	pass
 
-	    logger.info("queued task coplete : " + str(_code))
+	    logger.info("queued task completed : " + str(_code))
 	    return("OK"), _code
     else:
 	    logger.error("queued task error : " + str(_code))
@@ -622,26 +666,6 @@ def workerPhoto():
 	    return("enqueue error"), _code
 
 
-
-###----create multipart request body----
-###
-###	Google photo Album に適合するマルチパートMIME request bodyの作成
-###
-from urllib3.filepost import encode_multipart_formdata, choose_boundary
-from urllib3.fields   import RequestField
-
-def encode_multipart_related(xml_metadata, content, content_type):
-
-    rf1 = RequestField( name='placeholder', data=xml_metadata, headers={'Content-Type': 'application/atom+xml'} )
-    rf2 = RequestField( name='placeholder2', data=content, headers={'Content-Type': content_type } )
-    boundary = choose_boundary()
-
-    body, _ = encode_multipart_formdata([rf1, rf2] , boundary)
-
-    return body, 'multipart/related; boundary=%s' % boundary
-
-
-
 ###----Enqueue entry point----
 ###
 ###	サイト外からの登録要求受付⇒同期処理でQueue登録まで実施
@@ -650,10 +674,10 @@ def encode_multipart_related(xml_metadata, content, content_type):
 def uploadRequestPoint():
 
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    logger.debug("in uploadRequestPoint")
+    logger.setLevel(loggingLevel)
+    logger.info("in uploadRequestPoint")
 
-    logger.info(var_dump(flask.request.form))
+    logger.debug(var_dump(flask.request.form))
     Line_id = flask.request.form['source']
     filename = flask.request.form['filename']
 

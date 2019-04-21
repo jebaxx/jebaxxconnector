@@ -272,6 +272,7 @@ div.main-page {
                 <option value="{{ album_id }}" {{ album_item.selected }}>{{ album_item.name }}</option>
               {% endfor %}
             </select>
+            <br><small>ぴょん太が作ったアルバムにしか登録できません。</small>
           </td>
         </tr>
         <tr>
@@ -302,6 +303,7 @@ div.main-page {
           <td class='type_00'>
             <select name='album_id' id='select_album_id' {{ mode.route_edit }}>
             </select>
+            <br><small>ぴょん太が作ったアルバムにしか登録できません。</small>
           </td>
         <tr>
           <td class='type_00'>新規アルバム名</td>
